@@ -297,6 +297,46 @@ export function App() {
     }
   };
 
+  const handleAddStockItemsBatch = async (type, items) => {
+    if (!items || items.length === 0) return;
+    setIsSubmitting(true);
+    const key = type === 'blank' ? 'stock_blanks' : 'stock_consumables';
+
+    const newItemsWithIds = items.map((item, index) => {
+      const tempId = (type === 'blank' ? 'BLK-' : 'CSM-') + (data[key].length + 101 + index);
+      return {
+        ...item,
+        ID: tempId,
+        Quantity: item.quantity,
+        Item_Name: item.item_name,
+        Color: item.color,
+        Size: item.size,
+        Category: item.category,
+        Unit_Cost_DA: item.unit_cost_da,
+        Unit_Price_DA: item.unit_price_da
+      };
+    });
+
+    updateLocalStateAndCache(prev => ({
+      ...prev,
+      [key]: [...newItemsWithIds, ...prev[key]]
+    }));
+
+    const totalQty = items.reduce((sum, it) => sum + (parseInt(it.quantity) || 0), 0);
+    showToast(`✅ تم إضافة ${items.length} مقاسات وتشكيلات (${totalQty} قطعة) للمخزون`);
+
+    try {
+      for (const item of items) {
+        await addStockItemApi(type, item);
+      }
+    } catch (e) {
+      console.warn('Batch stock add warning:', e);
+    } finally {
+      setIsSubmitting(false);
+      setTimeout(() => loadData(), 2500);
+    }
+  };
+
   const handleEditStockItem = async (type, item) => {
     const key = type === 'blank' ? 'stock_blanks' : 'stock_consumables';
     updateLocalStateAndCache(prev => ({
@@ -704,6 +744,7 @@ export function App() {
             data={data}
             t={t}
             onAddStockItem={handleAddStockItem}
+            onAddStockItemsBatch={handleAddStockItemsBatch}
             onEditStockItem={handleEditStockItem}
             onEditMasterProduct={handleEditMasterProduct}
             onDeleteStockItem={handleDeleteStockItem}

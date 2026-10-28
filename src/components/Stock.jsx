@@ -18,6 +18,7 @@ import {
   Grid,
   List,
   Sparkles,
+  Copy,
   X
 } from 'lucide-react';
 
@@ -25,6 +26,7 @@ export function Stock({
   data, 
   t, 
   onAddStockItem, 
+  onAddStockItemsBatch,
   onEditStockItem, 
   onEditMasterProduct,
   onDeleteStockItem, 
@@ -69,6 +71,15 @@ export function Stock({
   const [blankMinAlert, setBlankMinAlert] = useState(5);
   const [blankCostDA, setBlankCostDA] = useState(650);
   const [blankPriceDA, setBlankPriceDA] = useState(1200);
+
+  // Variant Matrix for custom quantity per (Color, Size)
+  const [variantMatrix, setVariantMatrix] = useState({});
+  const [matrixQuickFillQty, setMatrixQuickFillQty] = useState(10);
+
+  // Pop-up Multi-Size state for existing product
+  const [popupAddMode, setPopupAddMode] = useState('multi'); // 'single' or 'multi'
+  const [popupMultiColor, setPopupMultiColor] = useState('Blanc');
+  const [popupMultiSizes, setPopupMultiSizes] = useState({ 'S': 0, 'M': 5, 'L': 2, 'XL': 0, '2XL': 0 });
 
   // New Consumable Form
   const [csmCategory, setCsmCategory] = useState('DTF Film');
@@ -124,7 +135,7 @@ export function Stock({
     ? groupedProducts.find(p => p.name === selectedProductDetails.name) || selectedProductDetails
     : null;
 
-  // Multi-variant creation handler
+  // Multi-variant creation handler with custom quantities per (Color, Size)
   const handleAddProductWithVariants = async (e) => {
     e.preventDefault();
     if (!blankName.trim()) {
@@ -136,15 +147,16 @@ export function Stock({
       return;
     }
 
-    // Generate all color x size combinations
+    const itemsToAdd = [];
     for (const color of selectedColors) {
       for (const size of selectedSizes) {
-        await onAddStockItem('blank', {
+        const qty = getVariantQty(color, size);
+        itemsToAdd.push({
           category: blankCategory,
           item_name: blankName.trim(),
           color: color.trim(),
           size: size.trim(),
-          quantity: parseInt(defaultQtyPerVariant) || 0,
+          quantity: qty,
           min_alert: parseInt(blankMinAlert) || 5,
           unit_cost_da: parseFloat(blankCostDA) || 0,
           unit_price_da: parseFloat(blankPriceDA) || 0
@@ -152,8 +164,17 @@ export function Stock({
       }
     }
 
+    if (onAddStockItemsBatch) {
+      await onAddStockItemsBatch('blank', itemsToAdd);
+    } else {
+      for (const item of itemsToAdd) {
+        await onAddStockItem('blank', item);
+      }
+    }
+
     setIsAddBlankOpen(false);
     setBlankName('');
+    setVariantMatrix({});
   };
 
   // Add single variant from inside the pop-up
@@ -272,6 +293,140 @@ export function Stock({
       setSelectedColors([...selectedColors, customColorInput.trim()]);
     }
     setCustomColorInput('');
+  };
+
+  // Helper for color indicator circle
+  const getColorDotBg = (colorName) => {
+    const c = (colorName || '').toLowerCase();
+    if (c.includes('blanc') || c.includes('white')) return 'bg-white border border-slate-300';
+    if (c.includes('noir') || c.includes('black')) return 'bg-slate-900 border border-slate-800';
+    if (c.includes('gris') || c.includes('grey') || c.includes('gray')) return 'bg-slate-400';
+    if (c.includes('bleu') || c.includes('blue')) return 'bg-blue-600';
+    if (c.includes('rouge') || c.includes('red')) return 'bg-rose-600';
+    if (c.includes('vert') || c.includes('green')) return 'bg-emerald-600';
+    if (c.includes('beige') || c.includes('camel')) return 'bg-amber-200 border border-amber-300';
+    if (c.includes('bordeaux')) return 'bg-rose-900';
+    return 'bg-brand-500';
+  };
+
+  // Variant Matrix helpers
+  const getVariantQty = (color, size) => {
+    const key = `${color}___${size}`;
+    if (variantMatrix[key] !== undefined) {
+      return variantMatrix[key];
+    }
+    return parseInt(defaultQtyPerVariant) || 0;
+  };
+
+  const handleSetVariantQty = (color, size, val) => {
+    const key = `${color}___${size}`;
+    const qty = Math.max(0, parseInt(val) || 0);
+    setVariantMatrix(prev => ({
+      ...prev,
+      [key]: qty
+    }));
+  };
+
+  const handleAdjustVariantQty = (color, size, delta) => {
+    const current = getVariantQty(color, size);
+    const next = Math.max(0, current + delta);
+    handleSetVariantQty(color, size, next);
+  };
+
+  const handleApplyQuickFillToAll = (val) => {
+    const target = Math.max(0, parseInt(val) || 0);
+    const newMatrix = {};
+    selectedColors.forEach(c => {
+      selectedSizes.forEach(s => {
+        newMatrix[`${c}___${s}`] = target;
+      });
+    });
+    setVariantMatrix(newMatrix);
+  };
+
+  const handleCopyColorQuantities = (sourceColor) => {
+    setVariantMatrix(prev => {
+      const updated = { ...prev };
+      selectedColors.forEach(targetColor => {
+        if (targetColor !== sourceColor) {
+          selectedSizes.forEach(s => {
+            const srcKey = `${sourceColor}___${s}`;
+            const targetKey = `${targetColor}___${s}`;
+            updated[targetKey] = prev[srcKey] !== undefined ? prev[srcKey] : (parseInt(defaultQtyPerVariant) || 0);
+          });
+        }
+      });
+      return updated;
+    });
+  };
+
+  const handleResetAllToZero = () => {
+    handleApplyQuickFillToAll(0);
+  };
+
+  const totalMatrixPieces = React.useMemo(() => {
+    let sum = 0;
+    selectedColors.forEach(color => {
+      selectedSizes.forEach(size => {
+        sum += getVariantQty(color, size);
+      });
+    });
+    return sum;
+  }, [selectedColors, selectedSizes, variantMatrix, defaultQtyPerVariant]);
+
+  const totalMatrixCost = totalMatrixPieces * (parseFloat(blankCostDA) || 0);
+  const totalMatrixValue = totalMatrixPieces * (parseFloat(blankPriceDA) || 0);
+
+  // Pop-up Multi-Size helpers inside existing product details
+  const handleSetPopupMultiSizeQty = (sz, val) => {
+    const q = Math.max(0, parseInt(val) || 0);
+    setPopupMultiSizes(prev => ({ ...prev, [sz]: q }));
+  };
+
+  const handleAdjustPopupMultiSizeQty = (sz, delta) => {
+    const cur = parseInt(popupMultiSizes[sz]) || 0;
+    handleSetPopupMultiSizeQty(sz, cur + delta);
+  };
+
+  const handleAddMultiVariantsInsideModal = async (e) => {
+    e.preventDefault();
+    if (!currentSelectedProduct) return;
+    if (!popupMultiColor.trim()) {
+      alert('يرجى كتابة أو اختيار اللون');
+      return;
+    }
+
+    const itemsToAdd = [];
+    Object.entries(popupMultiSizes).forEach(([sz, q]) => {
+      const qtyNum = parseInt(q) || 0;
+      if (qtyNum > 0) {
+        itemsToAdd.push({
+          category: currentSelectedProduct.category,
+          item_name: currentSelectedProduct.name,
+          color: popupMultiColor.trim(),
+          size: sz.trim(),
+          quantity: qtyNum,
+          min_alert: 5,
+          unit_cost_da: currentSelectedProduct.unitCost,
+          unit_price_da: currentSelectedProduct.unitPrice
+        });
+      }
+    });
+
+    if (itemsToAdd.length === 0) {
+      alert('يرجى تحديد كمية أكبر من 0 لمقاس واحد على الأقل (مثلاً: 5 في M أو 2 في L)');
+      return;
+    }
+
+    if (onAddStockItemsBatch) {
+      await onAddStockItemsBatch('blank', itemsToAdd);
+    } else {
+      for (const item of itemsToAdd) {
+        await onAddStockItem('blank', item);
+      }
+    }
+
+    setPopupMultiSizes({ 'S': 0, 'M': 5, 'L': 2, 'XL': 0, '2XL': 0 });
   };
 
   return (
@@ -763,57 +918,166 @@ export function Stock({
                 </div>
               </div>
 
-              {/* Add New Variant (Color / Size) to this Product */}
+              {/* Add New Variant(s) to this Product */}
               <div className="bg-slate-50 p-3 sm:p-4 rounded-2xl border border-slate-200">
-                <h5 className="font-bold text-xs text-slate-700 mb-2 flex items-center gap-1.5">
-                  <PlusCircle className="w-4 h-4 text-brand-600" />
-                  <span>إضافة مقاس أو لون جديد لهذا المنتج</span>
-                </h5>
-
-                <form onSubmit={handleAddVariantInsideModal} className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div className="col-span-2 sm:col-span-1">
-                    <input
-                      type="text"
-                      required
-                      value={newVariantColor}
-                      onChange={(e) => setNewVariantColor(e.target.value)}
-                      placeholder="اللون (Rouge)"
-                      className="w-full px-3 py-1.5 text-xs font-bold border rounded-xl bg-white outline-none"
-                    />
-                  </div>
-
-                  <div className="col-span-1">
-                    <input
-                      type="text"
-                      required
-                      value={newVariantSize}
-                      onChange={(e) => setNewVariantSize(e.target.value)}
-                      placeholder="المقاس (M)"
-                      className="w-full px-3 py-1.5 text-xs font-bold border rounded-xl bg-white outline-none text-center"
-                    />
-                  </div>
-
-                  <div className="col-span-1">
-                    <input
-                      type="number"
-                      min="0"
-                      value={newVariantQty}
-                      onChange={(e) => setNewVariantQty(e.target.value)}
-                      placeholder="الكمية"
-                      className="w-full px-3 py-1.5 text-xs font-bold border rounded-xl bg-white outline-none text-center"
-                    />
-                  </div>
-
-                  <div className="col-span-2 sm:col-span-1">
+                <div className="flex items-center justify-between mb-3">
+                  <h5 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+                    <PlusCircle className="w-4 h-4 text-brand-600" />
+                    <span>إضافة مقاسات جديدة لهذا المنتج</span>
+                  </h5>
+                  <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-slate-200 text-[10px] font-bold">
                     <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                      type="button"
+                      onClick={() => setPopupAddMode('multi')}
+                      className={`px-2.5 py-1 rounded-md transition ${popupAddMode === 'multi' ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
                     >
-                      + إضافة للتشكيلة
+                      عدة مقاسات (5M, 2L, ...)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPopupAddMode('single')}
+                      className={`px-2.5 py-1 rounded-md transition ${popupAddMode === 'single' ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                    >
+                      مقاس فردي واحد
                     </button>
                   </div>
-                </form>
+                </div>
+
+                {popupAddMode === 'multi' ? (
+                  <form onSubmit={handleAddMultiVariantsInsideModal} className="space-y-3">
+                    <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+                      <div className="w-full sm:w-48">
+                        <label className="block text-[10px] font-bold text-slate-600 mb-0.5">اللون المستهدف:</label>
+                        <input
+                          type="text"
+                          required
+                          value={popupMultiColor}
+                          onChange={(e) => setPopupMultiColor(e.target.value)}
+                          placeholder="اللون (مثال: Blanc, Noir)..."
+                          className="w-full px-3 py-1.5 text-xs font-bold border rounded-xl bg-white outline-none"
+                        />
+                      </div>
+                      
+                      {/* Color Suggestions from existing product colors */}
+                      {currentSelectedProduct.colors && currentSelectedProduct.colors.length > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap pt-1 sm:pt-4">
+                          <span className="text-[10px] text-slate-400">ألوان المنتج:</span>
+                          {currentSelectedProduct.colors.map(c => (
+                            <button
+                              type="button"
+                              key={c}
+                              onClick={() => setPopupMultiColor(c)}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition ${
+                                popupMultiColor === c ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              {c}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Size Steppers Matrix */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        حدد الكمية لكل مقاس في اللون ({popupMultiColor}):
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+                        {standardSizes.map(sz => {
+                          const val = popupMultiSizes[sz] !== undefined ? popupMultiSizes[sz] : 0;
+                          return (
+                            <div key={sz} className="bg-white p-2 rounded-xl border border-slate-200 flex flex-col items-center shadow-xs">
+                              <span className="text-[11px] font-black text-slate-700 mb-1">مقاس {sz}</span>
+                              <div className="flex items-center w-full gap-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdjustPopupMultiSizeQty(sz, -1)}
+                                  className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0"
+                                >
+                                  -
+                                </button>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={val}
+                                  onChange={(e) => handleSetPopupMultiSizeQty(sz, e.target.value)}
+                                  className="w-full text-center font-mono font-bold text-xs text-slate-900 py-0.5 outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdjustPopupMultiSizeQty(sz, 1)}
+                                  className="w-5 h-5 rounded bg-brand-50 hover:bg-brand-100 text-brand-700 font-bold text-xs flex items-center justify-center shrink-0"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-xs font-bold text-slate-600">
+                        مجموع القطع المراد إضافتها: <strong className="text-brand-700">{Object.values(popupMultiSizes).reduce((a, b) => a + (parseInt(b) || 0), 0)} قطعة</strong>
+                      </span>
+                      <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition shadow-sm flex items-center gap-1.5"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{isSubmitting ? 'جاري الإضافة...' : '+ إضافة هذه المقاسات للتشكيلة'}</span>
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <form onSubmit={handleAddVariantInsideModal} className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="col-span-2 sm:col-span-1">
+                      <input
+                        type="text"
+                        required
+                        value={newVariantColor}
+                        onChange={(e) => setNewVariantColor(e.target.value)}
+                        placeholder="اللون (Rouge)"
+                        className="w-full px-3 py-1.5 text-xs font-bold border rounded-xl bg-white outline-none"
+                      />
+                    </div>
+
+                    <div className="col-span-1">
+                      <input
+                        type="text"
+                        required
+                        value={newVariantSize}
+                        onChange={(e) => setNewVariantSize(e.target.value)}
+                        placeholder="المقاس (M)"
+                        className="w-full px-3 py-1.5 text-xs font-bold border rounded-xl bg-white outline-none text-center"
+                      />
+                    </div>
+
+                    <div className="col-span-1">
+                      <input
+                        type="number"
+                        min="0"
+                        value={newVariantQty}
+                        onChange={(e) => setNewVariantQty(e.target.value)}
+                        placeholder="الكمية"
+                        className="w-full px-3 py-1.5 text-xs font-bold border rounded-xl bg-white outline-none text-center"
+                      />
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-1">
+                      <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                      >
+                        + إضافة للتشكيلة
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
 
             </div>
@@ -964,14 +1228,14 @@ export function Stock({
       {/* MODAL: ADD PRODUCT WITH MULTI-VARIANTS (COLORS & SIZES GENERATOR) */}
       {isAddBlankOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto no-print">
-          <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col p-4 sm:p-6 space-y-4 my-auto overflow-hidden">
+          <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col p-4 sm:p-6 space-y-4 my-auto overflow-hidden">
             <div className="flex items-center justify-between border-b pb-3 shrink-0">
               <div>
                 <h3 className="font-extrabold text-base sm:text-lg text-slate-900">
-                  إضافة منتج خام مع خيارات الألوان والمقاسات (Variantes)
+                  إضافة منتج خام مع تفصيل المقاسات والكميات (Variantes)
                 </h3>
                 <p className="text-[11px] sm:text-xs text-slate-500">
-                  اختر الألوان والمقاسات وسيقوم النظام بإنشاء كل التشكيلات تلقائياً
+                  حدد المقاسات والكميات الدقيقة المتوفرة لديك لكل لون على حدة (مثلاً: 5 في M و 2 في L)
                 </p>
               </div>
               <button onClick={() => setIsAddBlankOpen(false)} className="text-slate-400 hover:text-slate-700 p-1">
@@ -1028,11 +1292,7 @@ export function Stock({
                           : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                       }`}
                     >
-                      <span className={`w-2 h-2 rounded-full ${
-                        color === 'Blanc' ? 'bg-slate-300' :
-                        color === 'Noir' ? 'bg-slate-900' :
-                        'bg-brand-500'
-                      }`}></span>
+                      <span className={`w-2.5 h-2.5 rounded-full ${getColorDotBg(color)}`}></span>
                       <span>{color}</span>
                     </button>
                   ))}
@@ -1080,24 +1340,13 @@ export function Stock({
                 </div>
               </div>
 
-              {/* Quantities & Pricing */}
-              <div className="grid grid-cols-3 gap-3 pt-2 border-t">
+              {/* Pricing & Thresholds */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    الكمية الأولية لكل مقاس
-                  </label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">سعر الشراء للقطعة (دج)</label>
                   <input
                     type="number"
                     min="0"
-                    value={defaultQtyPerVariant}
-                    onChange={(e) => setDefaultQtyPerVariant(e.target.value)}
-                    className="w-full px-3 py-2 text-xs font-bold border rounded-xl text-center"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">سعر الشراء (دج)</label>
-                  <input
-                    type="number"
                     value={blankCostDA}
                     onChange={(e) => setBlankCostDA(e.target.value)}
                     className="w-full px-3 py-2 text-xs font-bold border rounded-xl"
@@ -1107,21 +1356,163 @@ export function Stock({
                   <label className="block text-xs font-bold text-slate-700 mb-1">سعر البيع المقترح (دج)</label>
                   <input
                     type="number"
+                    min="0"
                     value={blankPriceDA}
                     onChange={(e) => setBlankPriceDA(e.target.value)}
                     className="w-full px-3 py-2 text-xs font-bold border rounded-xl text-brand-700"
                   />
                 </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">تنبيه الحد الأدنى (قطع)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={blankMinAlert}
+                    onChange={(e) => setBlankMinAlert(e.target.value)}
+                    className="w-full px-3 py-2 text-xs font-bold border rounded-xl text-rose-600 text-center font-mono"
+                  />
+                </div>
               </div>
 
-              {/* Combinations count summary */}
-              <div className="bg-brand-50 p-3 rounded-xl border border-brand-200 flex items-center justify-between text-xs">
-                <span className="text-brand-900 font-bold">
-                  سيتم إنشاء: {selectedColors.length} ألوان × {selectedSizes.length} مقاسات = <span className="font-black text-sm">{selectedColors.length * selectedSizes.length} تشكيلة</span>
-                </span>
-                <span className="text-brand-700 font-bold">
-                  إجمالي القطع: {(selectedColors.length * selectedSizes.length * (parseInt(defaultQtyPerVariant) || 0))} قطعة
-                </span>
+              {/* DETAILED QUANTITY MATRIX PER COLOR & SIZE */}
+              <div className="space-y-3 pt-3 border-t border-slate-200">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <label className="text-xs font-black text-slate-800 uppercase flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-brand-600" />
+                      <span>تحديد كمية كل مقاس بدقة (5M, 2L, ...)</span>
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      حدد عدد القطع الموجودة لديك في كل مقاس لكل لون على حدة
+                    </p>
+                  </div>
+
+                  {/* Quick Fill Toolbar */}
+                  <div className="flex items-center gap-2 self-start sm:self-auto bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-600">ملء سريع:</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={matrixQuickFillQty}
+                      onChange={(e) => setMatrixQuickFillQty(e.target.value)}
+                      className="w-14 px-2 py-1 text-xs font-black border rounded-lg bg-white text-center font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleApplyQuickFillToAll(matrixQuickFillQty)}
+                      className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg text-[11px] font-bold transition"
+                      title="تطبيق هذا الرقم على كل المقاسات والألوان"
+                    >
+                      تطبيق للكل
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetAllToZero}
+                      className="px-2 py-1 text-rose-600 hover:bg-rose-50 rounded-lg text-[11px] font-bold transition"
+                      title="تصفير كل المقاسات (0)"
+                    >
+                      تصفير
+                    </button>
+                  </div>
+                </div>
+
+                {/* Color Cards with Size Steppers */}
+                {selectedColors.length === 0 || selectedSizes.length === 0 ? (
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-center text-xs text-amber-800 font-bold">
+                    يرجى اختيار لون واحد ومقاس واحد على الأقل أعلاه لتحديد الكميات
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[42vh] overflow-y-auto pr-1">
+                    {selectedColors.map(color => {
+                      const colorTotal = selectedSizes.reduce((sum, size) => sum + getVariantQty(color, size), 0);
+                      
+                      return (
+                        <div key={color} className="bg-slate-50/90 p-3 sm:p-3.5 rounded-2xl border border-slate-200 hover:border-slate-300 transition">
+                          <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-slate-200">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-3.5 h-3.5 rounded-full shadow-xs ${getColorDotBg(color)}`}></span>
+                              <span className="font-black text-xs text-slate-900">{color}</span>
+                              <span className="text-[11px] font-bold bg-white px-2 py-0.5 rounded-md border border-slate-200 text-slate-600 font-mono">
+                                المجموع: <strong className="text-brand-700 font-extrabold">{colorTotal}</strong> قطعة
+                              </span>
+                            </div>
+
+                            {selectedColors.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyColorQuantities(color)}
+                                className="text-[11px] text-brand-600 hover:text-brand-800 font-bold flex items-center gap-1 hover:underline"
+                                title="نسخ مقاسات هذا اللون إلى باقي الألوان"
+                              >
+                                <Copy className="w-3 h-3" />
+                                <span>نسخ هذا التوزيع لباقي الألوان</span>
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Size inputs grid */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                            {selectedSizes.map(size => {
+                              const currentQty = getVariantQty(color, size);
+                              return (
+                                <div key={size} className="bg-white p-2 rounded-xl border border-slate-200 shadow-xs flex flex-col items-center">
+                                  <span className="text-[11px] font-black text-slate-700 mb-1">
+                                    مقاس {size}
+                                  </span>
+                                  <div className="flex items-center w-full gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAdjustVariantQty(color, size, -1)}
+                                      className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs flex items-center justify-center shrink-0"
+                                      title="إنقاص 1"
+                                    >
+                                      -
+                                    </button>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={currentQty}
+                                      onChange={(e) => handleSetVariantQty(color, size, e.target.value)}
+                                      className="w-full text-center font-mono font-black text-xs text-slate-900 border border-slate-200 rounded-lg py-1 focus:ring-1 focus:ring-brand-500 outline-none"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAdjustVariantQty(color, size, 1)}
+                                      className="w-6 h-6 rounded-lg bg-brand-50 hover:bg-brand-100 text-brand-700 font-black text-xs flex items-center justify-center shrink-0"
+                                      title="زيادة 1"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Financial & Stock Summary */}
+              <div className="bg-gradient-to-r from-brand-50 to-indigo-50 p-3.5 rounded-2xl border border-brand-200 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div>
+                  <span className="text-slate-500 text-[10px] block font-bold">التشكيلات والمقاسات</span>
+                  <span className="text-sm font-black text-slate-900">{selectedColors.length * selectedSizes.length} تشكيلة</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 text-[10px] block font-bold">إجمالي القطع في المخزن</span>
+                  <span className="text-sm font-black text-brand-700 font-mono">{totalMatrixPieces} قطعة</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 text-[10px] block font-bold">رأس مال المخزون</span>
+                  <span className="text-sm font-black text-slate-900 font-mono">{totalMatrixCost.toLocaleString()} دج</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 text-[10px] block font-bold">القيمة البيعية المتوقعة</span>
+                  <span className="text-sm font-black text-emerald-700 font-mono">{totalMatrixValue.toLocaleString()} دج</span>
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t">
@@ -1135,9 +1526,10 @@ export function Stock({
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                  className="px-6 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition shadow-sm flex items-center gap-1.5"
                 >
-                  {isSubmitting ? 'جاري الإنشاء...' : 'إنشاء وحفظ كل المقاسات'}
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{isSubmitting ? 'جاري الحفظ في الشيت...' : `حفظ كل المقاسات (${totalMatrixPieces} قطعة)`}</span>
                 </button>
               </div>
 
