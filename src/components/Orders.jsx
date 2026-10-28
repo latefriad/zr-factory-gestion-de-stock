@@ -514,19 +514,26 @@ export function Orders({
                     </td>
                     <td className="py-3.5 px-3 text-slate-700 max-w-xs">
                       <div className="font-bold text-slate-900 leading-snug">{ord.Blank_Item}</div>
-                      {ord.items && ord.items.length > 1 ? (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          <span className="text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded-md flex items-center gap-1">
-                            <span>📦 {ord.items.length} تشكيلات ومقاسات</span>
-                          </span>
-                        </div>
-                      ) : (
-                        ord.Color && (
-                          <div className="text-[10px] text-slate-500 font-medium">
-                            {ord.Color} | مقاس: {ord.Size}
+                      {(() => {
+                        const parsedItems = Array.isArray(ord.items) 
+                          ? ord.items 
+                          : (typeof ord.items === 'string' && ord.items.trim().startsWith('[') 
+                              ? (() => { try { return JSON.parse(ord.items); } catch(e) { return []; } })() 
+                              : []);
+                        return parsedItems.length > 1 ? (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            <span className="text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                              <span>📦 {parsedItems.length} تشكيلات ومقاسات</span>
+                            </span>
                           </div>
-                        )
-                      )}
+                        ) : (
+                          ord.Color && (
+                            <div className="text-[10px] text-slate-500 font-medium">
+                              {ord.Color} | مقاس: {ord.Size}
+                            </div>
+                          )
+                        );
+                      })()}
                     </td>
                     <td className="py-3.5 px-3 text-center font-extrabold text-slate-900 font-mono text-sm">
                       {ord.Quantity}

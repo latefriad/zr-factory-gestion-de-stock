@@ -12,6 +12,13 @@ export function InvoiceModal({ order, isOpen, onClose, t }) {
   const paid = parseFloat(order.Paid_Amount_DA || 0);
   const remaining = parseFloat(order.Remaining_DA || (total - paid));
 
+  // Safely extract items array whether stored as Array or JSON string
+  const orderItemsList = Array.isArray(order.items)
+    ? order.items
+    : (typeof order.items === 'string' && order.items.trim().startsWith('[')
+        ? (() => { try { return JSON.parse(order.items); } catch(e) { return []; } })()
+        : []);
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[94vh] flex flex-col overflow-hidden border border-slate-200 my-auto">
@@ -99,8 +106,8 @@ export function InvoiceModal({ order, isOpen, onClose, t }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {order.items && order.items.length > 0 ? (
-                order.items.map((it, idx) => {
+              {orderItemsList.length > 0 ? (
+                orderItemsList.map((it, idx) => {
                   const qty = parseInt(it.quantity) || 1;
                   const unitPr = parseFloat(it.unitSellingPrice || (total / (order.Quantity || 1)));
                   const lineTotal = unitPr * qty;
