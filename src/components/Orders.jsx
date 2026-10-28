@@ -60,6 +60,12 @@ export function Orders({
     { id: 1, position: 'الصدر (Poitrine)', widthCm: 12, heightCm: 12 }
   ]);
 
+  // MULTI-ITEM / MULTI-VARIANT ORDER ITEMS (e.g. 5x White S, 10x White L, 8x Green M)
+  const [orderItems, setOrderItems] = useState([]);
+  const [itemAddQty, setItemAddQty] = useState(5);
+  const [itemAddPrice, setItemAddPrice] = useState(1500);
+  const [customTotalOrderPrice, setCustomTotalOrderPrice] = useState(null);
+
   // Pricing & Costs
   const [meterPriceDA, setMeterPriceDA] = useState(1500);
   const [emballageCostDA, setEmballageCostDA] = useState(50);
@@ -131,21 +137,103 @@ export function Orders({
   ) || blanks[0] || null;
 
   const blankCostDA = currentBlankVariant ? (parseFloat(currentBlankVariant.Unit_Cost_DA) || 650) : 650;
+  const blankPriceDA = currentBlankVariant ? (parseFloat(currentBlankVariant.Unit_Price_DA) || 1500) : 1500;
   const availableQty = currentBlankVariant ? (parseFloat(currentBlankVariant.Quantity) || 0) : 0;
 
-  // Run dynamic calculation with multi-logo support
+  // Sync itemAddPrice when variant changes
+  React.useEffect(() => {
+    if (currentBlankVariant?.Unit_Price_DA) {
+      setItemAddPrice(currentBlankVariant.Unit_Price_DA);
+    }
+  }, [currentBlankVariant]);
+
+  // MULTI-ITEM HANDLERS
+  const handleAddItemToOrder = () => {
+    if (!selectedProductName || !selectedColor || !selectedSize) {
+      alert('يرجى تحديد نوع المنتج، اللون، والمقاس أولاً');
+      return;
+    }
+    const qty = parseInt(itemAddQty) || 1;
+    if (qty <= 0) return;
+
+    const unitPrice = parseFloat(itemAddPrice) || blankPriceDA;
+    const unitCost = blankCostDA;
+
+    // Check if same variant is already added
+    const existingIndex = orderItems.findIndex(
+      it => it.productName === selectedProductName && it.color === selectedColor && it.size === selectedSize
+    );
+
+    if (existingIndex >= 0) {
+      const updated = [...orderItems];
+      updated[existingIndex].quantity += qty;
+      updated[existingIndex].unitSellingPrice = unitPrice;
+      setOrderItems(updated);
+    } else {
+      setOrderItems([
+        ...orderItems,
+        {
+          id: Date.now() + Math.random(),
+          productName: selectedProductName,
+          color: selectedColor,
+          size: selectedSize,
+          quantity: qty,
+          unitCostDA: unitCost,
+          unitSellingPrice: unitPrice,
+          availableStock: availableQty,
+          stockItemId: currentBlankVariant?.ID
+        }
+      ]);
+    }
+  };
+
+  const handleRemoveOrderItem = (itemId) => {
+    setOrderItems(orderItems.filter(it => it.id !== itemId));
+  };
+
+  const handleUpdateOrderItemQty = (itemId, newQty) => {
+    const q = parseInt(newQty) || 0;
+    if (q <= 0) {
+      handleRemoveOrderItem(itemId);
+      return;
+    }
+    setOrderItems(orderItems.map(it => it.id === itemId ? { ...it, quantity: q } : it));
+  };
+
+  const handleUpdateOrderItemPrice = (itemId, newPrice) => {
+    const pr = parseFloat(newPrice) || 0;
+    setOrderItems(orderItems.map(it => it.id === itemId ? { ...it, unitSellingPrice: pr } : it));
+  };
+
+  // Total pieces: from orderItems if populated, otherwise fallback to single quantity
+  const totalOrderPieces = orderItems.length > 0
+    ? orderItems.reduce((sum, it) => sum + (parseInt(it.quantity) || 0), 0)
+    : (parseInt(quantity) || 1);
+
+  // Total garments cost
+  const totalGarmentsCost = orderItems.length > 0
+    ? orderItems.reduce((sum, it) => sum + ((parseFloat(it.unitCostDA) || 0) * (parseInt(it.quantity) || 0)), 0)
+    : (blankCostDA * (parseInt(quantity) || 1));
+
+  // Total garments selling price
+  const totalGarmentsPrice = orderItems.length > 0
+    ? orderItems.reduce((sum, it) => sum + ((parseFloat(it.unitSellingPrice) || 0) * (parseInt(it.quantity) || 0)), 0)
+    : ((parseFloat(unitSellingPrice) || 1500) * (parseInt(quantity) || 1));
+
+  // Run dynamic calculation with multi-logo support for total pieces
   const calcResult = calculateDtfPrint({
     logos,
     meterPriceDA,
     rollWidthCm: 58,
-    quantity,
-    blankCostDA,
+    quantity: totalOrderPieces,
+    blankCostDA: totalOrderPieces > 0 ? Math.round(totalGarmentsCost / totalOrderPieces) : 650,
     emballageCostDA,
     pressLaborDA,
-    sellingPriceDA: unitSellingPrice
+    sellingPriceDA: totalOrderPieces > 0 ? Math.round(totalGarmentsPrice / totalOrderPieces) : 1500
   });
 
-  const totalOrderPrice = (parseFloat(unitSellingPrice) || 0) * (parseInt(quantity) || 1);
+  const autoCalculatedOrderPrice = totalGarmentsPrice + ((calcResult.dtfUnitCost + parseFloat(emballageCostDA || 0) + parseFloat(pressLaborDA || 0)) * totalOrderPieces);
+  const totalOrderPrice = customTotalOrderPrice !== null ? customTotalOrderPrice : autoCalculatedOrderPrice;
   const remainingDue = Math.max(0, totalOrderPrice - (parseFloat(paidAmountDA) || 0));
 
   const handleAddLogo = () => {
@@ -187,6 +275,40 @@ export function Orders({
       return;
     }
 
+    // Determine final items array
+    let finalItems = [...orderItems];
+    if (finalItems.length === 0) {
+      finalItems = [{
+        id: Date.now(),
+        productName: selectedProductName || 'T-Shirt',
+        color: selectedColor || 'Noir',
+        size: selectedSize || 'L',
+        quantity: parseInt(quantity) || 1,
+        unitCostDA: blankCostDA,
+        unitSellingPrice: parseFloat(unitSellingPrice) || 1500,
+        availableStock: availableQty,
+        stockItemId: currentBlankVariant?.ID
+      }];
+    }
+
+    const totalQty = finalItems.reduce((sum, it) => sum + (parseInt(it.quantity) || 0), 0);
+
+    // Group items into a clear readable summary for display in tables and bordeaux
+    const summaryParts = [];
+    const groupedByProd = {};
+    finalItems.forEach(it => {
+      const p = it.productName || 'ملابس';
+      if (!groupedByProd[p]) groupedByProd[p] = [];
+      groupedByProd[p].push(`${it.quantity}x ${it.color} (${it.size})`);
+    });
+    for (const [prod, specs] of Object.entries(groupedByProd)) {
+      summaryParts.push(`${prod}: ${specs.join(', ')}`);
+    }
+    const itemsSummary = summaryParts.join(' | ');
+
+    const distinctColors = Array.from(new Set(finalItems.map(it => it.color).filter(Boolean)));
+    const distinctSizes = Array.from(new Set(finalItems.map(it => it.size).filter(Boolean)));
+
     const printSummary = logos.map((l, i) => 
       `${l.position} [${l.widthCm}x${l.heightCm}سم]`
     ).join(' + ');
@@ -195,10 +317,10 @@ export function Orders({
       date: new Date().toISOString().slice(0, 10),
       client_name: clientName.trim(),
       client_phone: clientPhone.trim(),
-      blank_item: selectedProductName || 'T-Shirt',
-      color: selectedColor || 'Noir',
-      size: selectedSize || 'L',
-      quantity: parseInt(quantity) || 1,
+      blank_item: itemsSummary,
+      color: distinctColors.join(', '),
+      size: distinctSizes.join(', '),
+      quantity: totalQty,
       print_details: `${logos.length} لوجو: ${printSummary}`,
       design_ref: designRef.trim(),
       carrier,
@@ -206,11 +328,14 @@ export function Orders({
       total_price_da: totalOrderPrice,
       paid_amount_da: parseFloat(paidAmountDA) || 0,
       status: 'En attente Confirmation',
-      notes: notes ? `${notes} | الناقل: ${carrier}` : `الناقل: ${carrier}`
+      notes: notes ? `${notes} | التفاصيل: ${itemsSummary}` : `التفاصيل: ${itemsSummary}`,
+      items: finalItems
     };
 
     onAddOrder(orderPayload);
     setIsModalOpen(false);
+    setOrderItems([]);
+    setCustomTotalOrderPrice(null);
     setQuantity(1);
     setPaidAmountDA(0);
     setDesignRef('');
@@ -387,16 +512,25 @@ export function Orders({
                         </div>
                       )}
                     </td>
-                    <td className="py-3.5 px-3 text-slate-700">
-                      <span className="font-semibold">{ord.Blank_Item}</span>
-                      {ord.Color && (
-                        <div className="text-[10px] text-slate-500 font-medium">
-                          {ord.Color} | مقاس: {ord.Size}
+                    <td className="py-3.5 px-3 text-slate-700 max-w-xs">
+                      <div className="font-bold text-slate-900 leading-snug">{ord.Blank_Item}</div>
+                      {ord.items && ord.items.length > 1 ? (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <span className="text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                            <span>📦 {ord.items.length} تشكيلات ومقاسات</span>
+                          </span>
                         </div>
+                      ) : (
+                        ord.Color && (
+                          <div className="text-[10px] text-slate-500 font-medium">
+                            {ord.Color} | مقاس: {ord.Size}
+                          </div>
+                        )
                       )}
                     </td>
-                    <td className="py-3.5 px-3 text-center font-extrabold text-slate-900">
+                    <td className="py-3.5 px-3 text-center font-extrabold text-slate-900 font-mono text-sm">
                       {ord.Quantity}
+                      <span className="text-[9px] text-slate-400 block font-normal">قطع</span>
                     </td>
                     <td className="py-3.5 px-3 text-slate-700 max-w-sm truncate" title={ord.Print_Details}>
                       <span className="bg-indigo-50 text-indigo-800 px-2 py-0.5 rounded font-semibold text-[11px]">
@@ -771,12 +905,19 @@ export function Orders({
                 </div>
               </div>
 
-              {/* STEP 1: VARIANT PICKER (Product -> Color -> Size) */}
-              <div className="bg-slate-50 p-3 sm:p-4 rounded-2xl border border-slate-200 space-y-3">
+              {/* STEP 1: MULTI-PRODUCT & MULTI-VARIANT BUILDER */}
+              <div className="bg-slate-50 p-3.5 sm:p-5 rounded-2xl border border-slate-200 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                  <label className="text-xs font-extrabold text-slate-800 uppercase flex items-center gap-1.5">
-                    <span>1. اختيار المنتج والتشكيلة المتوفرة (Variantes)</span>
-                  </label>
+                  <div>
+                    <label className="text-xs font-extrabold text-slate-800 uppercase flex items-center gap-1.5">
+                      <Layers className="w-4 h-4 text-brand-600" />
+                      <span>1. منتجات وتشكيلات الطلبية (Multi-Produits, Couleurs & Tailles)</span>
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      اختر المنتج واللون والمقاس ثم اضغط «+ أضف للطلب» لإضافة مقاسات وألوان متعددة لنفس العميل
+                    </p>
+                  </div>
+
                   <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full self-start sm:self-auto ${
                     availableQty > 5 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                   }`}>
@@ -784,15 +925,16 @@ export function Orders({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 sm:gap-3">
+                {/* Variant Picker Inputs */}
+                <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-xs grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
                   
-                  {/* Select Master Product */}
-                  <div className="sm:col-span-2">
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">المنتج الخام</label>
+                  {/* Master Product */}
+                  <div className="sm:col-span-4">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">المنتج الخام *</label>
                     <select
                       value={selectedProductName}
                       onChange={(e) => setSelectedProductName(e.target.value)}
-                      className="w-full px-3 py-2 text-xs font-bold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-brand-500 outline-none"
+                      className="w-full px-2.5 py-2 text-xs font-bold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-brand-500 outline-none"
                     >
                       {distinctProducts.map((p, i) => (
                         <option key={i} value={p}>{p}</option>
@@ -800,13 +942,13 @@ export function Orders({
                     </select>
                   </div>
 
-                  {/* Select Color */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">اللون المتوفر</label>
+                  {/* Color */}
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">اللون *</label>
                     <select
                       value={selectedColor}
                       onChange={(e) => setSelectedColor(e.target.value)}
-                      className="w-full px-3 py-2 text-xs font-bold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-brand-500 outline-none"
+                      className="w-full px-2.5 py-2 text-xs font-bold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-brand-500 outline-none"
                     >
                       {availableColors.map((c, i) => (
                         <option key={i} value={c}>{c}</option>
@@ -814,13 +956,13 @@ export function Orders({
                     </select>
                   </div>
 
-                  {/* Select Size */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">المقاس المتوفر</label>
+                  {/* Size */}
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">المقاس *</label>
                     <select
                       value={selectedSize}
                       onChange={(e) => setSelectedSize(e.target.value)}
-                      className="w-full px-3 py-2 text-xs font-bold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-brand-500 outline-none"
+                      className="w-full px-2.5 py-2 text-xs font-bold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-brand-500 outline-none"
                     >
                       {availableSizesForColor.map((s, i) => (
                         <option key={i} value={s.Size}>
@@ -830,22 +972,130 @@ export function Orders({
                     </select>
                   </div>
 
-                </div>
-
-                {/* Quantity Input */}
-                <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                  <span className="text-xs text-slate-500 font-medium">الكمية المطلوبة للطلب:</span>
-                  <div className="w-28 sm:w-32">
+                  {/* Quantity */}
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">الكمية</label>
                     <input
                       type="number"
                       min="1"
-                      required
-                      value={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm font-extrabold border border-slate-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none text-center bg-white"
+                      value={itemAddQty}
+                      onChange={(e) => setItemAddQty(e.target.value)}
+                      className="w-full px-2.5 py-2 text-xs font-extrabold border border-slate-300 rounded-xl text-center focus:ring-2 focus:ring-brand-500 outline-none"
                     />
                   </div>
+
+                  {/* Add Button */}
+                  <div className="sm:col-span-2">
+                    <button
+                      type="button"
+                      onClick={handleAddItemToOrder}
+                      className="w-full py-2 px-3 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-xs"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>+ أضف للطلب</span>
+                    </button>
+                  </div>
+
                 </div>
+
+                {/* Order Items Table (Lignes de Commande) */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-700 px-1">
+                    <span>قائمة تشكيلات الطلبية ({orderItems.length} تشكيلة)</span>
+                    <span className="text-slate-500 font-mono">
+                      مجموع القطع: <strong className="text-brand-700 text-sm">{totalOrderPieces}</strong> قطعة
+                    </span>
+                  </div>
+
+                  {orderItems.length > 0 ? (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-right">
+                          <thead className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200">
+                            <tr>
+                              <th className="py-2 px-3">المنتج</th>
+                              <th className="py-2 px-2 text-center">اللون</th>
+                              <th className="py-2 px-2 text-center">المقاس</th>
+                              <th className="py-2 px-2 text-center">الكمية</th>
+                              <th className="py-2 px-2 text-left">سعر القطعة (دج)</th>
+                              <th className="py-2 px-3 text-left">الإجمالي (دج)</th>
+                              <th className="py-2 px-2 text-center">حذف</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {orderItems.map((item) => (
+                              <tr key={item.id} className="hover:bg-slate-50 transition">
+                                <td className="py-2.5 px-3 font-bold text-slate-900">
+                                  {item.productName}
+                                </td>
+                                <td className="py-2.5 px-2 text-center">
+                                  <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded-full font-bold text-[11px]">
+                                    {item.color}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-2 text-center font-extrabold text-brand-700 font-mono">
+                                  {item.size}
+                                </td>
+                                <td className="py-2.5 px-2 text-center">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateOrderItemQty(item.id, item.quantity - 1)}
+                                      className="w-5 h-5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center font-bold"
+                                    >
+                                      -
+                                    </button>
+                                    <span className="w-8 text-center font-bold font-mono text-xs">{item.quantity}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateOrderItemQty(item.id, item.quantity + 1)}
+                                      className="w-5 h-5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center font-bold"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                </td>
+                                <td className="py-2.5 px-2 text-left">
+                                  <input
+                                    type="number"
+                                    value={item.unitSellingPrice}
+                                    onChange={(e) => handleUpdateOrderItemPrice(item.id, e.target.value)}
+                                    className="w-20 px-1.5 py-1 text-xs font-bold border rounded-lg text-left"
+                                  />
+                                </td>
+                                <td className="py-2.5 px-3 text-left font-black text-slate-900 font-mono">
+                                  {(item.quantity * item.unitSellingPrice).toLocaleString()} {t.currency}
+                                </td>
+                                <td className="py-2.5 px-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveOrderItem(item.id)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 transition"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="bg-slate-50 px-3 py-2 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs">
+                        <span className="text-slate-500">
+                          مجموع قطع الطلب: <strong className="text-slate-900 font-mono text-sm">{totalOrderPieces}</strong> قطعة
+                        </span>
+                        <span className="text-slate-500">
+                          مجموع أسعار الملابس الأساسية: <strong className="text-brand-700 font-mono text-sm">{totalGarmentsPrice.toLocaleString()} {t.currency}</strong>
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-white p-3 rounded-xl border border-dashed border-slate-300 text-center text-xs text-slate-400">
+                      💡 يمكنك إضافة عدة تشكيلات ومقاسات وألوان في نفس الطلبية باختيارها والضغط على <strong>«+ أضف للطلب»</strong> أعلاه.
+                    </div>
+                  )}
+                </div>
+
               </div>
 
               {/* STEP 2: MULTI-LOGO BUILDER */}
@@ -1007,27 +1257,50 @@ export function Orders({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    سعر البيع المقترح للقطعة (دج) *
+                    {orderItems.length > 0 ? 'مجموع الملابس الخام للطلب' : 'سعر البيع للقطعة (دج) *'}
                   </label>
-                  <input
-                    type="number"
-                    required
-                    value={unitSellingPrice}
-                    onChange={(e) => setUnitSellingPrice(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-extrabold text-brand-700 bg-brand-50 border border-brand-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
-                  />
-                  <span className="text-[10px] text-slate-500 mt-0.5 block">
-                    صافي ربحك في القطعة: +{(parseFloat(unitSellingPrice) || 0) - calcResult.totalUnitCost} {t.currency}
-                  </span>
+                  {orderItems.length > 0 ? (
+                    <div className="px-3 py-2 text-sm font-extrabold text-brand-700 bg-brand-50 border border-brand-200 rounded-xl">
+                      {totalGarmentsPrice.toLocaleString()} {t.currency}
+                      <span className="text-[10px] text-slate-500 block font-normal mt-0.5">
+                        متوسط: {Math.round(totalGarmentsPrice / totalOrderPieces)} دج / قطعة
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <input
+                        type="number"
+                        required
+                        value={unitSellingPrice}
+                        onChange={(e) => setUnitSellingPrice(e.target.value)}
+                        className="w-full px-3 py-2 text-sm font-extrabold text-brand-700 bg-brand-50 border border-brand-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                      />
+                      <span className="text-[10px] text-slate-500 mt-0.5 block">
+                        صافي ربحك في القطعة: +{(parseFloat(unitSellingPrice) || 0) - calcResult.totalUnitCost} {t.currency}
+                      </span>
+                    </>
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    المبلغ الإجمالي للطلب ({quantity} قطع)
+                    المبلغ الإجمالي للطلب ({totalOrderPieces} قطع)
                   </label>
-                  <div className="px-3 py-2 text-base font-extrabold text-slate-900 bg-slate-100 rounded-xl border border-slate-200">
-                    {totalOrderPrice.toLocaleString()} {t.currency}
-                  </div>
+                  <input
+                    type="number"
+                    value={customTotalOrderPrice !== null ? customTotalOrderPrice : totalOrderPrice}
+                    onChange={(e) => setCustomTotalOrderPrice(e.target.value ? parseFloat(e.target.value) : null)}
+                    className="w-full px-3 py-2 text-base font-black text-slate-900 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none font-mono"
+                  />
+                  {customTotalOrderPrice !== null && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomTotalOrderPrice(null)}
+                      className="text-[10px] text-brand-600 font-bold hover:underline mt-0.5 block"
+                    >
+                      إعادة الحساب التلقائي ({autoCalculatedOrderPrice.toLocaleString()} دج)
+                    </button>
+                  )}
                 </div>
 
                 <div>
@@ -1039,7 +1312,7 @@ export function Orders({
                     value={paidAmountDA}
                     onChange={(e) => setPaidAmountDA(e.target.value)}
                     placeholder="0"
-                    className="w-full px-3 py-2 text-sm font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-300 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                    className="w-full px-3 py-2 text-sm font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-300 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-mono"
                   />
                   <span className="text-[10px] text-rose-600 font-bold mt-0.5 block">
                     المتبقي بذمته: {remainingDue.toLocaleString()} {t.currency}

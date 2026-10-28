@@ -275,33 +275,70 @@ function handleNewOrder(ss, order) {
     order.notes || ""
   ]);
 
-  // Decrement blank stock
+  // Decrement blank stock (Supports multi-variant items & single item fallback)
   const blanksData = blanksSheet.getDataRange().getValues();
-  for (let i = 1; i < blanksData.length; i++) {
-    if (
-      String(blanksData[i][2]).trim().toLowerCase() === String(order.blank_item).trim().toLowerCase() &&
-      String(blanksData[i][3]).trim().toLowerCase() === String(order.color).trim().toLowerCase() &&
-      String(blanksData[i][4]).trim().toLowerCase() === String(order.size).trim().toLowerCase()
-    ) {
-      const currentQty = Number(blanksData[i][5]);
-      const newQty = Math.max(0, currentQty - Number(order.quantity));
-      blanksSheet.getRange(i + 1, 6).setValue(newQty);
-      blanksSheet.getRange(i + 1, 10).setValue(dateStr);
-      break;
+  if (order.items && order.items.length > 0) {
+    for (let k = 0; k < order.items.length; k++) {
+      const it = order.items[k];
+      const prodName = String(it.productName || it.product || order.blank_item).trim().toLowerCase();
+      const colName = String(it.color || "").trim().toLowerCase();
+      const szName = String(it.size || "").trim().toLowerCase();
+      const itQty = Number(it.quantity || 1);
+
+      for (let i = 1; i < blanksData.length; i++) {
+        if (
+          String(blanksData[i][2]).trim().toLowerCase() === prodName &&
+          String(blanksData[i][3]).trim().toLowerCase() === colName &&
+          String(blanksData[i][4]).trim().toLowerCase() === szName
+        ) {
+          const currentQty = Number(blanksData[i][5]);
+          const newQty = Math.max(0, currentQty - itQty);
+          blanksSheet.getRange(i + 1, 6).setValue(newQty);
+          blanksSheet.getRange(i + 1, 10).setValue(dateStr);
+          blanksData[i][5] = newQty; // update local cache
+
+          // Log movement for this variant
+          movementsSheet.appendRow([
+            "MOV-" + Date.now() + "-" + k,
+            dateStr,
+            "OUT",
+            "Blank",
+            it.productName + " (" + it.color + " - " + it.size + ")",
+            itQty,
+            orderId,
+            "Commande: " + order.client_name
+          ]);
+          break;
+        }
+      }
+    }
+  } else {
+    for (let i = 1; i < blanksData.length; i++) {
+      if (
+        String(blanksData[i][2]).trim().toLowerCase() === String(order.blank_item).trim().toLowerCase() &&
+        String(blanksData[i][3]).trim().toLowerCase() === String(order.color).trim().toLowerCase() &&
+        String(blanksData[i][4]).trim().toLowerCase() === String(order.size).trim().toLowerCase()
+      ) {
+        const currentQty = Number(blanksData[i][5]);
+        const newQty = Math.max(0, currentQty - Number(order.quantity));
+        blanksSheet.getRange(i + 1, 6).setValue(newQty);
+        blanksSheet.getRange(i + 1, 10).setValue(dateStr);
+
+        // Log movement
+        movementsSheet.appendRow([
+          "MOV-" + Date.now(),
+          dateStr,
+          "OUT",
+          "Blank",
+          order.blank_item + " (" + order.color + " - " + order.size + ")",
+          Number(order.quantity),
+          orderId,
+          "Commande: " + order.client_name
+        ]);
+        break;
+      }
     }
   }
-
-  // Log movement
-  movementsSheet.appendRow([
-    "MOV-" + Date.now(),
-    dateStr,
-    "OUT",
-    "Blank",
-    order.blank_item + " (" + order.color + " - " + order.size + ")",
-    Number(order.quantity),
-    orderId,
-    "Commande: " + order.client_name
-  ]);
 
   updateClientStats(clientsSheet, order.client_name, order.client_phone, Number(order.total_price_da), remaining);
   return { status: "success", orderId: orderId };

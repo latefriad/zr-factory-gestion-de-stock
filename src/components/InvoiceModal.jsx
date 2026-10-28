@@ -99,26 +99,54 @@ export function InvoiceModal({ order, isOpen, onClose, t }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              <tr>
-                <td className="py-3 px-2">
-                  <div className="font-bold text-slate-900">{order.Blank_Item}</div>
-                  <div className="text-[11px] text-slate-500">
-                    {order.Color ? `${order.Color} - مقاس ${order.Size}` : ''} | {order.Print_Details}
-                  </div>
-                  {order.Design_Ref && (
-                    <div className="text-[10px] text-slate-400">التصميم: {order.Design_Ref}</div>
-                  )}
-                </td>
-                <td className="py-3 px-2 text-center font-extrabold text-sm">
-                  {order.Quantity}
-                </td>
-                <td className="py-3 px-2 text-left font-bold">
-                  {(total / (order.Quantity || 1)).toLocaleString()} {t.currency}
-                </td>
-                <td className="py-3 px-2 text-left font-extrabold text-slate-900">
-                  {total.toLocaleString()} {t.currency}
-                </td>
-              </tr>
+              {order.items && order.items.length > 0 ? (
+                order.items.map((it, idx) => {
+                  const qty = parseInt(it.quantity) || 1;
+                  const unitPr = parseFloat(it.unitSellingPrice || (total / (order.Quantity || 1)));
+                  const lineTotal = unitPr * qty;
+
+                  return (
+                    <tr key={idx}>
+                      <td className="py-2.5 px-2">
+                        <div className="font-bold text-slate-900">{it.productName || it.product || order.Blank_Item}</div>
+                        <div className="text-[11px] text-slate-500">
+                          اللون: <span className="font-bold text-slate-800">{it.color}</span> | المقاس: <span className="font-bold text-slate-800">{it.size}</span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-2 text-center font-extrabold text-sm font-mono">
+                        {qty}
+                      </td>
+                      <td className="py-2.5 px-2 text-left font-bold font-mono">
+                        {unitPr.toLocaleString()} {t.currency}
+                      </td>
+                      <td className="py-2.5 px-2 text-left font-extrabold text-slate-900 font-mono">
+                        {lineTotal.toLocaleString()} {t.currency}
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td className="py-3 px-2">
+                    <div className="font-bold text-slate-900">{order.Blank_Item}</div>
+                    <div className="text-[11px] text-slate-500">
+                      {order.Color ? `${order.Color} - مقاس ${order.Size}` : ''} | {order.Print_Details}
+                    </div>
+                    {order.Design_Ref && (
+                      <div className="text-[10px] text-slate-400">التصميم: {order.Design_Ref}</div>
+                    )}
+                  </td>
+                  <td className="py-3 px-2 text-center font-extrabold text-sm">
+                    {order.Quantity}
+                  </td>
+                  <td className="py-3 px-2 text-left font-bold">
+                    {(total / (order.Quantity || 1)).toLocaleString()} {t.currency}
+                  </td>
+                  <td className="py-3 px-2 text-left font-extrabold text-slate-900">
+                    {total.toLocaleString()} {t.currency}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
 

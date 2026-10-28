@@ -144,27 +144,74 @@ export function App() {
       Quantity: orderPayload.quantity,
       Print_Details: orderPayload.print_details,
       Design_Ref: orderPayload.design_ref,
+      Carrier: orderPayload.carrier,
+      Tracking_Number: orderPayload.tracking_number,
       Total_Price_DA: orderPayload.total_price_da,
       Paid_Amount_DA: orderPayload.paid_amount_da,
       Remaining_DA: orderPayload.total_price_da - orderPayload.paid_amount_da,
-      Status: 'Pending',
-      Notes: orderPayload.notes
+      Status: orderPayload.status || 'En attente Confirmation',
+      Notes: orderPayload.notes,
+      items: orderPayload.items || []
     };
 
-    updateLocalStateAndCache(prev => ({
-      ...prev,
-      orders: [newOrderObj, ...prev.orders]
-    }));
-    showToast('✅ تم تسجيل الطلب وإضافته للشاشة فوراً!');
+    updateLocalStateAndCache(prev => {
+      let updatedBlanks = [...prev.stock_blanks];
+      if (orderPayload.items && orderPayload.items.length > 0) {
+        for (const it of orderPayload.items) {
+          updatedBlanks = updatedBlanks.map(b => {
+            if (
+              b.Item_Name?.trim().toLowerCase() === it.productName?.trim().toLowerCase() &&
+              b.Color?.trim().toLowerCase() === it.color?.trim().toLowerCase() &&
+              b.Size?.trim().toLowerCase() === it.size?.trim().toLowerCase()
+            ) {
+              return {
+                ...b,
+                Quantity: Math.max(0, (parseInt(b.Quantity) || 0) - (parseInt(it.quantity) || 0))
+              };
+            }
+            return b;
+          });
+        }
+      } else {
+        updatedBlanks = updatedBlanks.map(b => {
+          if (
+            b.Item_Name?.trim().toLowerCase() === orderPayload.blank_item?.trim().toLowerCase() &&
+            b.Color?.trim().toLowerCase() === orderPayload.color?.trim().toLowerCase() &&
+            b.Size?.trim().toLowerCase() === orderPayload.size?.trim().toLowerCase()
+          ) {
+            return {
+              ...b,
+              Quantity: Math.max(0, (parseInt(b.Quantity) || 0) - (parseInt(orderPayload.quantity) || 0))
+            };
+          }
+          return b;
+        });
+      }
+
+      return {
+        ...prev,
+        stock_blanks: updatedBlanks,
+        orders: [newOrderObj, ...prev.orders]
+      };
+    });
+    showToast('✅ تم تسجيل الطلب وخصم كميات المقاسات من المخزون!');
 
     // 2. Send to Google Sheets in background
     try {
       await addOrderApi(orderPayload);
+      
+      // Also sync individual variant decrements in background for 100% guarantee
+      if (orderPayload.items && orderPayload.items.length > 0) {
+        for (const it of orderPayload.items) {
+          if (it.stockItemId) {
+            adjustStockQtyApi('blank', it.stockItemId, -it.quantity).catch(() => {});
+          }
+        }
+      }
     } catch (err) {
       console.warn("Background sheet sync:", err);
     } finally {
       setIsSubmitting(false);
-      // Delayed background re-sync
       setTimeout(() => loadData(), 2500);
     }
   };
@@ -192,7 +239,19 @@ export function App() {
     
     // Return to stock automatically on Retour if order was not already a return
     if ((newStatus.includes('Retour') || newStatus.includes('مرتجع')) && targetOrder && !targetOrder.Status?.includes('Retour')) {
-      if (targetOrder.Blank_Item) {
+      if (targetOrder.items && targetOrder.items.length > 0) {
+        for (const it of targetOrder.items) {
+          const matchingBlank = data.stock_blanks.find(b => 
+            b.Item_Name?.trim().toLowerCase() === it.productName?.trim().toLowerCase() &&
+            b.Color?.trim().toLowerCase() === it.color?.trim().toLowerCase() &&
+            b.Size?.trim().toLowerCase() === it.size?.trim().toLowerCase()
+          );
+          if (matchingBlank) {
+            handleAdjustStockQty('blank', matchingBlank.ID, it.quantity);
+          }
+        }
+        showToast(`📦 إدارة المرتجعات: تم استرجاع (${targetOrder.Quantity}) قطع لجميع المقاسات والألوان!`);
+      } else if (targetOrder.Blank_Item) {
         const matchingBlank = data.stock_blanks.find(b => 
           b.Item_Name && b.Item_Name.trim() === targetOrder.Blank_Item.trim() &&
           (!targetOrder.Color || b.Color === targetOrder.Color) &&
