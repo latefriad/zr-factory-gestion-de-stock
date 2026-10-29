@@ -62,7 +62,7 @@ export function Orders({
 
   // MULTI-ITEM / MULTI-VARIANT ORDER ITEMS (e.g. 5x White S, 10x White L, 8x Green M)
   const [orderItems, setOrderItems] = useState([]);
-  const [itemAddQty, setItemAddQty] = useState(5);
+  const [itemAddQty, setItemAddQty] = useState(1);
   const [itemAddPrice, setItemAddPrice] = useState(1500);
   const [customTotalOrderPrice, setCustomTotalOrderPrice] = useState(null);
 
@@ -70,7 +70,7 @@ export function Orders({
   const [meterPriceDA, setMeterPriceDA] = useState(1500);
   const [emballageCostDA, setEmballageCostDA] = useState(50);
   const [pressLaborDA, setPressLaborDA] = useState(50);
-  const [unitSellingPrice, setUnitSellingPrice] = useState(1400);
+  const [unitSellingPrice, setUnitSellingPrice] = useState(1500);
   const [paidAmountDA, setPaidAmountDA] = useState(0);
 
   const orders = data.orders || [];
@@ -140,10 +140,12 @@ export function Orders({
   const blankPriceDA = currentBlankVariant ? (parseFloat(currentBlankVariant.Unit_Price_DA) || 1500) : 1500;
   const availableQty = currentBlankVariant ? (parseFloat(currentBlankVariant.Quantity) || 0) : 0;
 
-  // Sync itemAddPrice when variant changes
+  // Sync itemAddPrice and unitSellingPrice when variant changes
   React.useEffect(() => {
     if (currentBlankVariant?.Unit_Price_DA) {
-      setItemAddPrice(currentBlankVariant.Unit_Price_DA);
+      const pr = parseFloat(currentBlankVariant.Unit_Price_DA) || 1500;
+      setItemAddPrice(pr);
+      setUnitSellingPrice(pr);
     }
   }, [currentBlankVariant]);
 
@@ -153,10 +155,10 @@ export function Orders({
       alert('يرجى تحديد نوع المنتج، اللون، والمقاس أولاً');
       return;
     }
-    const qty = parseInt(itemAddQty) || 1;
+    const qty = parseInt(itemAddQty) || parseInt(quantity) || 1;
     if (qty <= 0) return;
 
-    const unitPrice = parseFloat(itemAddPrice) || blankPriceDA;
+    const unitPrice = parseFloat(itemAddPrice) || parseFloat(unitSellingPrice) || blankPriceDA;
     const unitCost = blankCostDA;
 
     // Check if same variant is already added
@@ -205,20 +207,24 @@ export function Orders({
     setOrderItems(orderItems.map(it => it.id === itemId ? { ...it, unitSellingPrice: pr } : it));
   };
 
-  // Total pieces: from orderItems if populated, otherwise fallback to single quantity
+  // Total pieces: from orderItems if populated, otherwise fallback to itemAddQty / quantity
   const totalOrderPieces = orderItems.length > 0
     ? orderItems.reduce((sum, it) => sum + (parseInt(it.quantity) || 0), 0)
-    : (parseInt(quantity) || 1);
+    : (parseInt(itemAddQty) || parseInt(quantity) || 1);
 
-  // Total garments cost
+  // Total garments raw cost
   const totalGarmentsCost = orderItems.length > 0
     ? orderItems.reduce((sum, it) => sum + ((parseFloat(it.unitCostDA) || 0) * (parseInt(it.quantity) || 0)), 0)
-    : (blankCostDA * (parseInt(quantity) || 1));
+    : (blankCostDA * totalOrderPieces);
 
-  // Total garments selling price
+  // Total garments selling price (All garments * selling price)
   const totalGarmentsPrice = orderItems.length > 0
     ? orderItems.reduce((sum, it) => sum + ((parseFloat(it.unitSellingPrice) || 0) * (parseInt(it.quantity) || 0)), 0)
-    : ((parseFloat(unitSellingPrice) || 1500) * (parseInt(quantity) || 1));
+    : ((parseFloat(unitSellingPrice) || parseFloat(itemAddPrice) || 1500) * totalOrderPieces);
+
+  // Average selling price and raw cost per piece for DTF profit analysis
+  const avgSellingPricePerPiece = totalOrderPieces > 0 ? Math.round(totalGarmentsPrice / totalOrderPieces) : 1500;
+  const avgBlankCostPerPiece = totalOrderPieces > 0 ? Math.round(totalGarmentsCost / totalOrderPieces) : 650;
 
   // Run dynamic calculation with multi-logo support for total pieces
   const calcResult = calculateDtfPrint({
@@ -226,13 +232,14 @@ export function Orders({
     meterPriceDA,
     rollWidthCm: 58,
     quantity: totalOrderPieces,
-    blankCostDA: totalOrderPieces > 0 ? Math.round(totalGarmentsCost / totalOrderPieces) : 650,
+    blankCostDA: avgBlankCostPerPiece,
     emballageCostDA,
     pressLaborDA,
-    sellingPriceDA: totalOrderPieces > 0 ? Math.round(totalGarmentsPrice / totalOrderPieces) : 1500
+    sellingPriceDA: avgSellingPricePerPiece
   });
 
-  const autoCalculatedOrderPrice = totalGarmentsPrice + ((calcResult.dtfUnitCost + parseFloat(emballageCostDA || 0) + parseFloat(pressLaborDA || 0)) * totalOrderPieces);
+  // The actual auto-calculated price charged to the client is the total selling price of all garments!
+  const autoCalculatedOrderPrice = totalGarmentsPrice;
   const totalOrderPrice = customTotalOrderPrice !== null ? customTotalOrderPrice : autoCalculatedOrderPrice;
   const remainingDue = Math.max(0, totalOrderPrice - (parseFloat(paidAmountDA) || 0));
 
@@ -278,14 +285,16 @@ export function Orders({
     // Determine final items array
     let finalItems = [...orderItems];
     if (finalItems.length === 0) {
+      const singleQty = parseInt(itemAddQty) || parseInt(quantity) || 1;
+      const singlePrice = parseFloat(unitSellingPrice) || parseFloat(itemAddPrice) || 1500;
       finalItems = [{
         id: Date.now(),
         productName: selectedProductName || 'T-Shirt',
         color: selectedColor || 'Noir',
         size: selectedSize || 'L',
-        quantity: parseInt(quantity) || 1,
+        quantity: singleQty,
         unitCostDA: blankCostDA,
-        unitSellingPrice: parseFloat(unitSellingPrice) || 1500,
+        unitSellingPrice: singlePrice,
         availableStock: availableQty,
         stockItemId: currentBlankVariant?.ID
       }];
@@ -337,6 +346,7 @@ export function Orders({
     setOrderItems([]);
     setCustomTotalOrderPrice(null);
     setQuantity(1);
+    setItemAddQty(1);
     setPaidAmountDA(0);
     setDesignRef('');
     setTrackingNumber('');
@@ -936,7 +946,7 @@ export function Orders({
                 <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-xs grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
                   
                   {/* Master Product */}
-                  <div className="sm:col-span-4">
+                  <div className="sm:col-span-3">
                     <label className="block text-[11px] font-bold text-slate-600 mb-1">المنتج الخام *</label>
                     <select
                       value={selectedProductName}
@@ -981,25 +991,47 @@ export function Orders({
 
                   {/* Quantity */}
                   <div className="sm:col-span-2">
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">الكمية</label>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">الكمية (قطع)</label>
                     <input
                       type="number"
                       min="1"
                       value={itemAddQty}
-                      onChange={(e) => setItemAddQty(e.target.value)}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 1;
+                        setItemAddQty(val);
+                        setQuantity(val);
+                      }}
                       className="w-full px-2.5 py-2 text-xs font-extrabold border border-slate-300 rounded-xl text-center focus:ring-2 focus:ring-brand-500 outline-none"
                     />
                   </div>
 
-                  {/* Add Button */}
+                  {/* Unit Selling Price */}
                   <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">سعر بيع القطعة (دج)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={itemAddPrice}
+                      onChange={(e) => {
+                        const pr = parseFloat(e.target.value) || 0;
+                        setItemAddPrice(pr);
+                        setUnitSellingPrice(pr);
+                      }}
+                      className="w-full px-2.5 py-2 text-xs font-black border border-slate-300 rounded-xl text-center focus:ring-2 focus:ring-brand-500 outline-none font-mono text-brand-700"
+                    />
+                  </div>
+
+                  {/* Add Button */}
+                  <div className="sm:col-span-1">
                     <button
                       type="button"
                       onClick={handleAddItemToOrder}
-                      className="w-full py-2 px-3 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-xs"
+                      className="w-full py-2 px-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-xs"
+                      title="إضافة تشكيلة أخرى لنفس الطلبية"
                     >
-                      <Plus className="w-4 h-4" />
-                      <span>+ أضف للطلب</span>
+                      <Plus className="w-4 h-4 shrink-0" />
+                      <span className="hidden sm:inline">+ أضف</span>
+                      <span className="sm:hidden">+ أضف للطلب</span>
                     </button>
                   </div>
 
@@ -1264,13 +1296,13 @@ export function Orders({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {orderItems.length > 0 ? 'مجموع الملابس الخام للطلب' : 'سعر البيع للقطعة (دج) *'}
+                    {orderItems.length > 0 ? 'متوسط سعر البيع للقطعة' : 'سعر البيع للقطعة (دج) *'}
                   </label>
                   {orderItems.length > 0 ? (
                     <div className="px-3 py-2 text-sm font-extrabold text-brand-700 bg-brand-50 border border-brand-200 rounded-xl">
-                      {totalGarmentsPrice.toLocaleString()} {t.currency}
+                      {Math.round(totalGarmentsPrice / totalOrderPieces).toLocaleString()} {t.currency}
                       <span className="text-[10px] text-slate-500 block font-normal mt-0.5">
-                        متوسط: {Math.round(totalGarmentsPrice / totalOrderPieces)} دج / قطعة
+                        إجمالي {totalOrderPieces} قطع: {totalGarmentsPrice.toLocaleString()} {t.currency}
                       </span>
                     </div>
                   ) : (
@@ -1279,10 +1311,14 @@ export function Orders({
                         type="number"
                         required
                         value={unitSellingPrice}
-                        onChange={(e) => setUnitSellingPrice(e.target.value)}
-                        className="w-full px-3 py-2 text-sm font-extrabold text-brand-700 bg-brand-50 border border-brand-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                        onChange={(e) => {
+                          const p = parseFloat(e.target.value) || 0;
+                          setUnitSellingPrice(p);
+                          setItemAddPrice(p);
+                        }}
+                        className="w-full px-3 py-2 text-sm font-extrabold text-brand-700 bg-brand-50 border border-brand-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none font-mono"
                       />
-                      <span className="text-[10px] text-slate-500 mt-0.5 block">
+                      <span className="text-[10px] text-emerald-700 font-bold mt-0.5 block">
                         صافي ربحك في القطعة: +{(parseFloat(unitSellingPrice) || 0) - calcResult.totalUnitCost} {t.currency}
                       </span>
                     </>
@@ -1290,8 +1326,11 @@ export function Orders({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    المبلغ الإجمالي للطلب ({totalOrderPieces} قطع)
+                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>المبلغ الإجمالي للطلب *</span>
+                    <span className="text-[10px] font-mono text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded font-bold">
+                      ({totalOrderPieces} قطع × {Math.round(totalGarmentsPrice / totalOrderPieces)} دج)
+                    </span>
                   </label>
                   <input
                     type="number"
@@ -1299,7 +1338,7 @@ export function Orders({
                     onChange={(e) => setCustomTotalOrderPrice(e.target.value ? parseFloat(e.target.value) : null)}
                     className="w-full px-3 py-2 text-base font-black text-slate-900 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none font-mono"
                   />
-                  {customTotalOrderPrice !== null && (
+                  {customTotalOrderPrice !== null ? (
                     <button
                       type="button"
                       onClick={() => setCustomTotalOrderPrice(null)}
@@ -1307,6 +1346,10 @@ export function Orders({
                     >
                       إعادة الحساب التلقائي ({autoCalculatedOrderPrice.toLocaleString()} دج)
                     </button>
+                  ) : (
+                    <span className="text-[10px] text-slate-500 mt-0.5 block font-mono">
+                      {totalOrderPieces} قطع × {Math.round(totalGarmentsPrice / totalOrderPieces)} دج = {autoCalculatedOrderPrice.toLocaleString()} دج
+                    </span>
                   )}
                 </div>
 
@@ -1323,6 +1366,28 @@ export function Orders({
                   />
                   <span className="text-[10px] text-rose-600 font-bold mt-0.5 block">
                     المتبقي بذمته: {remainingDue.toLocaleString()} {t.currency}
+                  </span>
+                </div>
+              </div>
+
+              {/* Profit & Production Cost Overview Banner */}
+              <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-brand-50 p-3 rounded-xl border border-emerald-200/80 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div>
+                  <span className="text-slate-500 text-[10px] block font-bold">إجمالي قطع الطلبية</span>
+                  <span className="text-sm font-black text-slate-900 font-mono">{totalOrderPieces} قطع</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 text-[10px] block font-bold">المبلغ المطلوب من الزبون</span>
+                  <span className="text-sm font-black text-brand-700 font-mono">{totalOrderPrice.toLocaleString()} {t.currency}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 text-[10px] block font-bold">تكلفة الإنتاج الإجمالية</span>
+                  <span className="text-sm font-black text-slate-700 font-mono">{(calcResult.totalUnitCost * totalOrderPieces).toLocaleString()} {t.currency}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 text-[10px] block font-bold">صافي الربح المتوقع</span>
+                  <span className="text-sm font-black text-emerald-700 font-mono">
+                    +{(totalOrderPrice - (calcResult.totalUnitCost * totalOrderPieces)).toLocaleString()} {t.currency}
                   </span>
                 </div>
               </div>
