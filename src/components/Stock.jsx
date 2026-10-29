@@ -19,6 +19,10 @@ import {
   List,
   Sparkles,
   Copy,
+  TrendingUp,
+  DollarSign,
+  Coins,
+  BarChart3,
   X
 } from 'lucide-react';
 
@@ -98,8 +102,9 @@ export function Stock({
   const blanks = data.stock_blanks || [];
   const consumables = data.stock_consumables || [];
   const waste = data.waste || [];
+  const orders = data.orders || [];
 
-  // Group blanks by Product Name to create Master Products
+  // Group blanks by Product Name to create Master Products with CA and Margin calculations
   const groupedProducts = React.useMemo(() => {
     const map = {};
     blanks.forEach(item => {
@@ -111,24 +116,100 @@ export function Stock({
           unitCost: parseFloat(item.Unit_Cost_DA) || 0,
           unitPrice: parseFloat(item.Unit_Price_DA) || 0,
           totalQty: 0,
+          totalCostValue: 0,
+          totalMarketCA: 0,
           variants: [],
           colors: new Set(),
           sizes: new Set()
         };
       }
       const qty = parseFloat(item.Quantity) || 0;
+      const cost = parseFloat(item.Unit_Cost_DA) || map[name].unitCost || 0;
+      const price = parseFloat(item.Unit_Price_DA) || map[name].unitPrice || 0;
+
       map[name].totalQty += qty;
+      map[name].totalCostValue += (qty * cost);
+      map[name].totalMarketCA += (qty * price);
       map[name].variants.push(item);
       if (item.Color) map[name].colors.add(item.Color.trim());
       if (item.Size) map[name].sizes.add(item.Size.trim());
     });
 
-    return Object.values(map).map(p => ({
-      ...p,
-      colors: Array.from(p.colors),
-      sizes: Array.from(p.sizes)
-    }));
-  }, [blanks]);
+    return Object.values(map).map(p => {
+      let soldQty = 0;
+      let soldRevenue = 0;
+
+      orders.forEach(ord => {
+        let itemsList = [];
+        if (Array.isArray(ord.items)) itemsList = ord.items;
+        else if (typeof ord.items === 'string' && ord.items.trim().startsWith('[')) {
+          try { itemsList = JSON.parse(ord.items); } catch(e) {}
+        }
+
+        if (itemsList.length > 0) {
+          itemsList.forEach(it => {
+            if ((it.productName || it.product || '').toLowerCase().trim() === p.name.toLowerCase().trim()) {
+              const q = parseInt(it.quantity) || 0;
+              soldQty += q;
+              soldRevenue += (q * (parseFloat(it.unitSellingPrice) || p.unitPrice));
+            }
+          });
+        } else if (ord.Blank_Item && ord.Blank_Item.toLowerCase().includes(p.name.toLowerCase())) {
+          const q = parseInt(ord.Quantity) || 0;
+          soldQty += q;
+          soldRevenue += parseFloat(ord.Total_Price_DA) || (q * p.unitPrice);
+        }
+      });
+
+      const potentialProfit = Math.max(0, p.totalMarketCA - p.totalCostValue);
+      const profitMarginPct = p.totalMarketCA > 0 ? Math.round((potentialProfit / p.totalMarketCA) * 100) : 0;
+
+      return {
+        ...p,
+        colors: Array.from(p.colors),
+        sizes: Array.from(p.sizes),
+        soldQty,
+        soldRevenue,
+        potentialProfit,
+        profitMarginPct
+      };
+    });
+  }, [blanks, orders]);
+
+  // Overall Warehouse Stock Valuation (Chiffre d'Affaires du Stock & Capital)
+  const overallStockStats = React.useMemo(() => {
+    let totalPieces = 0;
+    let totalCapitalCost = 0;
+    let totalMarketCA = 0;
+
+    blanks.forEach(b => {
+      const q = parseFloat(b.Quantity) || 0;
+      const c = parseFloat(b.Unit_Cost_DA) || 0;
+      const p = parseFloat(b.Unit_Price_DA) || 0;
+      totalPieces += q;
+      totalCapitalCost += (q * c);
+      totalMarketCA += (q * p);
+    });
+
+    let consumablesCost = 0;
+    consumables.forEach(c => {
+      const q = parseFloat(c.Quantity) || 0;
+      const cost = parseFloat(c.Unit_Cost_DA) || 0;
+      consumablesCost += (q * cost);
+    });
+
+    const totalPotentialProfit = Math.max(0, totalMarketCA - totalCapitalCost);
+    const overallMarginPct = totalMarketCA > 0 ? Math.round((totalPotentialProfit / totalMarketCA) * 100) : 0;
+
+    return {
+      totalPieces,
+      totalCapitalCost,
+      totalMarketCA,
+      consumablesCost,
+      totalPotentialProfit,
+      overallMarginPct
+    };
+  }, [blanks, consumables]);
 
   // Keep selectedProductDetails updated live with blanks data
   const currentSelectedProduct = selectedProductDetails 
@@ -503,6 +584,89 @@ export function Stock({
         </div>
       </div>
 
+      {/* Financial KPI Banner for Stock (Chiffre d'Affaires du Stock & Capital) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        {/* Card 1: Chiffre d'Affaires Marchand du Stock */}
+        <div className="bg-gradient-to-br from-indigo-950 via-slate-900 to-brand-950 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-indigo-700/40 relative overflow-hidden">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-black uppercase tracking-wider text-indigo-200">
+              رقم أعمال المخزون (CA du Stock)
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center text-amber-300">
+              <Coins className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl sm:text-3xl font-black font-mono text-white tracking-tight">
+            {overallStockStats.totalMarketCA.toLocaleString()} <span className="text-xs font-bold text-indigo-300">{t.currency}</span>
+          </div>
+          <p className="text-[11px] text-indigo-200/80 mt-1 flex items-center justify-between">
+            <span>القيمة السوقية عند بيع كل المخزون</span>
+            <strong className="text-amber-300 font-mono">{overallStockStats.totalPieces} قطعة</strong>
+          </p>
+        </div>
+
+        {/* Card 2: Capital Investi (Coût d'achat du Stock) */}
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:shadow-sm transition">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-slate-500 uppercase">
+              رأس المال المجمد (Coût d'Achat)
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700">
+              <Package className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-black font-mono text-slate-900 tracking-tight">
+            {overallStockStats.totalCapitalCost.toLocaleString()} <span className="text-xs font-bold text-slate-400">{t.currency}</span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+            <span>تكلفة الشراء الأصلية للملابس</span>
+            {overallStockStats.consumablesCost > 0 && (
+              <span className="text-[10px] text-slate-400 font-mono">+{overallStockStats.consumablesCost.toLocaleString()} دج مواد DTF</span>
+            )}
+          </p>
+        </div>
+
+        {/* Card 3: Marge Bénéficiaire Potentielle du Stock */}
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:shadow-sm transition">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-slate-500 uppercase">
+              الأرباح المتوقعة (Marge Brute)
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <TrendingUp className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-black font-mono text-emerald-600 tracking-tight">
+            +{overallStockStats.totalPotentialProfit.toLocaleString()} <span className="text-xs font-bold text-slate-400">{t.currency}</span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+            <span>صافي ربح المخزون المتوقع</span>
+            <strong className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-bold">
+              +{overallStockStats.overallMarginPct}% هامش ربح
+            </strong>
+          </p>
+        </div>
+
+        {/* Card 4: Volume & Total Pieces */}
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs hover:shadow-sm transition">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-slate-500 uppercase">
+              حجم المخزون الفعلي
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+              <BarChart3 className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-black font-mono text-slate-900 tracking-tight">
+            {overallStockStats.totalPieces} <span className="text-xs font-bold text-slate-400">قطعة</span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+            <span>تشكيلة المنتجات المسجلة</span>
+            <strong className="text-slate-800">{groupedProducts.length} منتجات رئيسية</strong>
+          </p>
+        </div>
+      </div>
+
       {/* Tabs & Search Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-b border-slate-200 pb-2">
         <div className="flex items-center gap-4 w-full sm:w-auto">
@@ -651,13 +815,46 @@ export function Stock({
                         ))}
                       </div>
                     </div>
+
+                    {/* Chiffre d'Affaires du Stock & Financial Metrics for this Product */}
+                    <div className="bg-slate-50/90 p-3 rounded-xl border border-slate-200/80 mb-3 space-y-1.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600 font-bold">رقم أعمال المخزون (CA Stock):</span>
+                        <span className="font-black text-brand-700 font-mono text-sm">
+                          {prod.totalMarketCA.toLocaleString()} {t.currency}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">رأس مال الشراء (Capital):</span>
+                        <span className="font-bold text-slate-700 font-mono">
+                          {prod.totalCostValue.toLocaleString()} {t.currency}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-200/60">
+                        <span className="text-emerald-700 font-bold">الأرباح المتوقعة عند البيع:</span>
+                        <span className="font-black text-emerald-700 font-mono">
+                          +{prod.potentialProfit.toLocaleString()} {t.currency} ({prod.profitMarginPct}%)
+                        </span>
+                      </div>
+                      {prod.soldQty > 0 && (
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-dashed border-slate-200">
+                          <span>مبيعات محققة (CA Réalisé):</span>
+                          <span className="font-bold text-slate-800 font-mono">
+                            {prod.soldRevenue.toLocaleString()} دج ({prod.soldQty} قطعة)
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Footer & Pop-up trigger */}
                   <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
                     <div>
-                      <span className="text-slate-400 font-medium">سعر الشراء: </span>
-                      <span className="font-bold text-slate-800">{prod.unitCost} {t.currency}</span>
+                      <span className="text-slate-400 font-medium">الشراء: </span>
+                      <span className="font-bold text-slate-800 font-mono">{prod.unitCost} دج</span>
+                      <span className="text-slate-300 mx-1">•</span>
+                      <span className="text-slate-400 font-medium">البيع: </span>
+                      <span className="font-extrabold text-brand-700 font-mono">{prod.unitPrice} دج</span>
                     </div>
 
                     <div className="inline-flex items-center gap-1 font-extrabold text-brand-600 group-hover:translate-x-1 rtl:group-hover:-translate-x-1 transition">
@@ -681,7 +878,7 @@ export function Stock({
       {activeTab === 'blanks' && viewMode === 'table' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-xs text-right min-w-[720px]">
+            <table className="w-full text-xs text-right min-w-[850px]">
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase">
                 <tr>
                   <th className="py-3 px-3">الكود</th>
@@ -691,6 +888,8 @@ export function Stock({
                   <th className="py-3 px-3 text-center">الكمية (+ / - سريع)</th>
                   <th className="py-3 px-3">سعر الشراء</th>
                   <th className="py-3 px-3">سعر البيع</th>
+                  <th className="py-3 px-3 text-left">رأس المال (Capital)</th>
+                  <th className="py-3 px-3 text-left">رقم أعمال المخزون (CA)</th>
                   <th className="py-3 px-3 text-center">الحالة</th>
                   <th className="py-3 px-3 text-center">تعديل / حذف</th>
                 </tr>
@@ -702,6 +901,8 @@ export function Stock({
                     const qty = parseFloat(item.Quantity) || 0;
                     const minAlert = parseFloat(item.Min_Alert) || 5;
                     const isLow = qty <= minAlert;
+                    const costVal = qty * (parseFloat(item.Unit_Cost_DA) || 0);
+                    const marketVal = qty * (parseFloat(item.Unit_Price_DA) || 0);
 
                     return (
                       <tr key={idx} className="hover:bg-slate-50 transition">
@@ -738,11 +939,17 @@ export function Stock({
                             </button>
                           </div>
                         </td>
-                        <td className="py-3 px-3 text-slate-600 font-bold">
+                        <td className="py-3 px-3 text-slate-600 font-bold font-mono">
                           {parseFloat(item.Unit_Cost_DA || 0).toLocaleString()} {t.currency}
                         </td>
-                        <td className="py-3 px-3 text-brand-700 font-extrabold">
+                        <td className="py-3 px-3 text-brand-700 font-extrabold font-mono">
                           {parseFloat(item.Unit_Price_DA || 0).toLocaleString()} {t.currency}
+                        </td>
+                        <td className="py-3 px-3 text-slate-700 font-bold font-mono text-left">
+                          {costVal.toLocaleString()} {t.currency}
+                        </td>
+                        <td className="py-3 px-3 text-brand-700 font-black font-mono text-left">
+                          {marketVal.toLocaleString()} {t.currency}
                         </td>
                         <td className="py-3 px-3 text-center">
                           {isLow ? (
@@ -815,6 +1022,28 @@ export function Stock({
                 >
                   <X className="w-5 h-5 sm:w-6 sm:h-6" />
                 </button>
+              </div>
+            </div>
+
+            {/* Financial Performance Ribbon for this Product */}
+            <div className="bg-gradient-to-r from-slate-100 via-indigo-50/70 to-emerald-50/70 p-3 sm:p-4 border-b border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs shrink-0">
+              <div>
+                <span className="text-[10px] text-slate-500 font-bold block">المخزون المتوفر</span>
+                <span className="text-sm font-black text-slate-900 font-mono">{currentSelectedProduct.totalQty} قطعة</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 font-bold block">رقم أعمال المخزون (CA du Stock)</span>
+                <span className="text-sm font-black text-brand-700 font-mono">{(currentSelectedProduct.totalMarketCA || 0).toLocaleString()} {t.currency}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 font-bold block">رأس المال المجمد (Capital)</span>
+                <span className="text-sm font-black text-slate-700 font-mono">{(currentSelectedProduct.totalCostValue || 0).toLocaleString()} {t.currency}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 font-bold block">الأرباح المتوقعة عند البيع</span>
+                <span className="text-sm font-black text-emerald-700 font-mono">
+                  +{((currentSelectedProduct.totalMarketCA || 0) - (currentSelectedProduct.totalCostValue || 0)).toLocaleString()} {t.currency}
+                </span>
               </div>
             </div>
 

@@ -40,6 +40,13 @@ export function Dashboard({
   const totalLoss = waste.reduce((sum, wst) => sum + (parseFloat(wst.Loss_Cost_DA) || 0), 0);
   const netProfit = totalRevenue - totalExpenses - totalLoss;
 
+  // Stock Market Valuation (Chiffre d'Affaires du Stock)
+  const stockTotalPieces = blanks.reduce((sum, b) => sum + (parseFloat(b.Quantity) || 0), 0);
+  const stockMarketCA = blanks.reduce((sum, b) => sum + ((parseFloat(b.Quantity) || 0) * (parseFloat(b.Unit_Price_DA) || 0)), 0);
+  const stockCapitalCost = blanks.reduce((sum, b) => sum + ((parseFloat(b.Quantity) || 0) * (parseFloat(b.Unit_Cost_DA) || 0)), 0);
+  const stockPotentialProfit = Math.max(0, stockMarketCA - stockCapitalCost);
+  const stockMarginPct = stockMarketCA > 0 ? Math.round((stockPotentialProfit / stockMarketCA) * 100) : 0;
+
   // Operational KPIs according to POD Departments
   const confirmationOrders = orders.filter(o => o.Status?.includes('Confirmation') || o.Status === 'Pending' || o.Status === 'New');
   const inPrintOrders = orders.filter(o => o.Status === 'In Print' || o.Status?.includes('Print') || o.Status?.includes('طباعة'));
@@ -164,6 +171,40 @@ export function Dashboard({
           </p>
         </div>
 
+      </div>
+
+      {/* Stock Market Valuation Banner (Chiffre d'Affaires du Stock & Valeur Marchande) */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-brand-950 text-white rounded-3xl p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-lg border border-indigo-500/30">
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 flex items-center justify-center shrink-0">
+            <Coins className="w-6 h-6 text-amber-300" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="font-extrabold text-sm sm:text-base text-white">
+                رقم أعمال المخزون المتوفر (Chiffre d'Affaires du Stock)
+              </h3>
+              <span className="bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 text-[10px] font-black px-2 py-0.5 rounded-full font-mono">
+                {stockTotalPieces} قطعة بالمستودع
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span>القيمة السوقية للبيع (CA Marchand): <strong className="text-amber-300 font-mono text-sm">{stockMarketCA.toLocaleString()} دج</strong></span>
+              <span>•</span>
+              <span>رأس المال المستثمر (Capital): <strong className="text-slate-300 font-mono">{stockCapitalCost.toLocaleString()} دج</strong></span>
+              <span>•</span>
+              <span>الأرباح المتوقعة عند البيع: <strong className="text-emerald-400 font-mono">+{stockPotentialProfit.toLocaleString()} دج (+{stockMarginPct}%)</strong></span>
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => onNavigate('stock')}
+          className="w-full md:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/30 shrink-0"
+        >
+          <span>تفاصيل مخزون المنتجات</span>
+          <ArrowUpRight className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Partners Profit Sharing Quick Preview Banner (30% / 30% / 40%) */}
