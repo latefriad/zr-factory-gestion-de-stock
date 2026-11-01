@@ -34,6 +34,7 @@ import {
 } from './api';
 
 import { Header } from './components/Header';
+import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { Orders } from './components/Orders';
 import { Stock } from './components/Stock';
@@ -51,6 +52,25 @@ export function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState('');
   const [toastMsg, setToastMsg] = useState('');
+
+  // Sidebar Layout State (Left Bar Menu)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('zr_sidebar_collapsed') === 'true';
+    } catch(e) {
+      return false;
+    }
+  });
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+  const toggleSidebarCollapse = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem('zr_sidebar_collapsed', String(next)); } catch(e) {}
+      return next;
+    });
+  };
 
   // Main Database State
   const [data, setData] = useState({
@@ -568,138 +588,59 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col">
+    <div className="min-h-screen bg-slate-100 flex overflow-x-hidden" style={{ direction: 'ltr' }}>
       
-      {/* Top Header */}
-      <Header
+      {/* Left Sidebar (Always physically on the Left bar!) */}
+      <Sidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        t={t}
+        data={data}
+        isCollapsed={isSidebarCollapsed}
+        setIsCollapsed={toggleSidebarCollapse}
+        isOpenMobile={isMobileSidebarOpen}
+        setIsOpenMobile={setIsMobileSidebarOpen}
+        onOpenCalculator={() => setIsCalculatorOpen(true)}
+        onOpenNewOrder={() => {
+          setActiveTab('orders');
+          setIsNewOrderDirectOpen(true);
+        }}
         lang={lang}
         setLang={setLang}
-        t={t}
+        onRefresh={loadData}
         isSyncing={isSyncing}
         lastUpdated={lastUpdated}
-        onRefresh={loadData}
+        onOpenSettings={() => setShowSettingsModal(true)}
       />
 
-      {/* Main Navigation - Desktop & Tablet Top Bar */}
-      <nav className="bg-white border-b border-slate-200 sticky top-14 sm:top-16 z-20 shadow-xs no-print hidden md:block">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-1 sm:gap-2 py-2 overflow-x-auto">
-            
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition whitespace-nowrap ${
-                activeTab === 'dashboard'
-                  ? 'bg-brand-600 text-white shadow-sm shadow-brand-500/25'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <LayoutDashboard className="w-4 h-4" />
-              <span>{t.dashboard}</span>
-            </button>
+      {/* Main Workspace Column */}
+      <div 
+        className="flex-1 flex flex-col min-w-0 transition-all duration-300"
+        style={{ direction: lang === 'ar' ? 'rtl' : 'ltr' }}
+      >
+        {/* Top Header */}
+        <Header
+          lang={lang}
+          setLang={setLang}
+          t={t}
+          isSyncing={isSyncing}
+          lastUpdated={lastUpdated}
+          onRefresh={loadData}
+          onToggleMobileSidebar={() => setIsMobileSidebarOpen(prev => !prev)}
+          onToggleDesktopSidebar={toggleSidebarCollapse}
+          isSidebarCollapsed={isSidebarCollapsed}
+          activeTab={activeTab}
+          onOpenCalculator={() => setIsCalculatorOpen(true)}
+          onOpenNewOrder={() => {
+            setActiveTab('orders');
+            setIsNewOrderDirectOpen(true);
+          }}
+          showSettings={showSettingsModal}
+          setShowSettings={setShowSettingsModal}
+        />
 
-            <button
-              onClick={() => setActiveTab('orders')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition whitespace-nowrap ${
-                activeTab === 'orders'
-                  ? 'bg-brand-600 text-white shadow-sm shadow-brand-500/25'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <Printer className="w-4 h-4" />
-              <span>{t.orders}</span>
-              {data.orders.length > 0 && (
-                <span className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
-                  activeTab === 'orders' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
-                }`}>
-                  {data.orders.length}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('stock')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition whitespace-nowrap ${
-                activeTab === 'stock'
-                  ? 'bg-brand-600 text-white shadow-sm shadow-brand-500/25'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <Package className="w-4 h-4" />
-              <span>{t.stock}</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('clients')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition whitespace-nowrap ${
-                activeTab === 'clients'
-                  ? 'bg-brand-600 text-white shadow-sm shadow-brand-500/25'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>{t.clients}</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('expenses')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition whitespace-nowrap ${
-                activeTab === 'expenses'
-                  ? 'bg-brand-600 text-white shadow-sm shadow-brand-500/25'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <TrendingDown className="w-4 h-4" />
-              <span>{t.expenses}</span>
-            </button>
-
-            {/* Partners & Profit Sharing (30% / 30% / 40%) */}
-            <button
-              onClick={() => setActiveTab('partners')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition whitespace-nowrap ${
-                activeTab === 'partners'
-                  ? 'bg-amber-600 text-white shadow-sm shadow-amber-500/25'
-                  : 'text-amber-800 bg-amber-50/70 hover:bg-amber-100 border border-amber-200/80'
-              }`}
-            >
-              <Coins className="w-4 h-4 text-amber-500" />
-              <span>الأرباح والشركاء (30/30/40)</span>
-            </button>
-
-            <div className="mr-auto rtl:mr-auto rtl:ml-0 ltr:ml-auto ltr:mr-0 pl-2">
-              <button
-                onClick={() => setIsCalculatorOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-sm transition"
-              >
-                <Calculator className="w-3.5 h-3.5" />
-                <span>حاسبة أمتار DTF</span>
-              </button>
-            </div>
-
-          </div>
-        </div>
-      </nav>
-
-      {/* Mobile Top Quick Action Bar */}
-      <div className="md:hidden bg-slate-900 text-white px-3 py-2 flex items-center justify-between shadow-sm sticky top-14 z-20 no-print">
-        <span className="text-[11px] font-extrabold text-slate-300">
-          {activeTab === 'dashboard' && 'لوحة التحكم والتحليل'}
-          {activeTab === 'orders' && `الطلبات (${data.orders.length})`}
-          {activeTab === 'stock' && 'المخزون والمتغيرات'}
-          {activeTab === 'clients' && 'العملاء والديون'}
-          {activeTab === 'expenses' && 'مصاريف المصنع'}
-          {activeTab === 'partners' && 'الأرباح والشركاء (30% / 30% / 40%)'}
-        </span>
-        <button
-          onClick={() => setIsCalculatorOpen(true)}
-          className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-amber-500 text-slate-950 shadow-sm"
-        >
-          <Calculator className="w-3 h-3" />
-          <span>حاسبة DTF</span>
-        </button>
-      </div>
-
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24 md:pb-8">
+        {/* Main Content Area */}
+        <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24 md:pb-8">
         
         {/* Toast Notification */}
         {toastMsg && (
@@ -862,6 +803,8 @@ export function App() {
           </button>
         </div>
       </nav>
+
+      </div> {/* closes Main Workspace Column */}
 
       {/* DTF Smart Calculator Modal */}
       <DtfCalculatorModal
