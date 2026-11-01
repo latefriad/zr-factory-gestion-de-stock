@@ -1474,7 +1474,7 @@ export function Stock({
 
             <form onSubmit={handleAddProductWithVariants} className="space-y-4 overflow-y-auto flex-1 pr-1">
               
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">الصنف</label>
                   <select
@@ -1779,7 +1779,7 @@ export function Stock({
             </div>
 
             <form onSubmit={handleAddConsumableSubmit} className="space-y-4 overflow-y-auto flex-1 pr-1">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">الصنف</label>
                   <select
@@ -1807,7 +1807,7 @@ export function Stock({
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">الكمية</label>
                   <input
@@ -1893,7 +1893,7 @@ export function Stock({
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">الكمية التالفة</label>
                   <input
@@ -1968,8 +1968,8 @@ export function Stock({
             </div>
 
             <form onSubmit={handleEditBlankSubmit} className="space-y-3.5">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="col-span-1 sm:col-span-2">
                   <label className="block text-xs font-bold text-slate-700 mb-1">اسم المنتج</label>
                   <input
                     type="text"
@@ -2085,7 +2085,7 @@ export function Stock({
                   className="w-full px-3 py-2 text-xs font-bold border border-slate-300 rounded-xl"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">الصنف</label>
                   <input
@@ -2189,7 +2189,7 @@ export function Stock({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">سعر الشراء (دج)</label>
                   <input

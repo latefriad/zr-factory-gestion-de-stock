@@ -716,7 +716,7 @@ export function Orders({
             </div>
 
             <form onSubmit={handleEditSubmit} className="space-y-4 overflow-y-auto flex-1 pr-1">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">العميل</label>
                   <input
@@ -738,7 +738,7 @@ export function Orders({
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">الكمية</label>
                   <input
@@ -779,7 +779,7 @@ export function Orders({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">حالة الطلب في خط الإنتاج</label>
                   <select
@@ -812,7 +812,7 @@ export function Orders({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">شركة التوصيل</label>
                   <select

@@ -177,7 +177,7 @@ export function DtfCalculatorModal({ isOpen, onClose, t, onApplyToOrder }) {
             </div>
 
             {/* Quantity & Meter Price */}
-            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   {t.quantity} (عدد القطع)
@@ -204,7 +204,7 @@ export function DtfCalculatorModal({ isOpen, onClose, t, onApplyToOrder }) {
             </div>
 
             {/* Extra Costs */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <div>
                 <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
                   التيشيرت الخام

@@ -96,66 +96,68 @@ export function InvoiceModal({ order, isOpen, onClose, t }) {
           </div>
 
           {/* Items Table */}
-          <table className="w-full text-xs text-right border-collapse">
-            <thead>
-              <tr className="border-b-2 border-slate-300 text-slate-600 font-bold uppercase">
-                <th className="py-2 px-2 text-right">المنتج والتفاصيل</th>
-                <th className="py-2 px-2 text-center">الكمية</th>
-                <th className="py-2 px-2 text-left">سعر الوحدة (دج)</th>
-                <th className="py-2 px-2 text-left">المجموع (دج)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {orderItemsList.length > 0 ? (
-                orderItemsList.map((it, idx) => {
-                  const qty = parseInt(it.quantity) || 1;
-                  const unitPr = parseFloat(it.unitSellingPrice || (total / (order.Quantity || 1)));
-                  const lineTotal = unitPr * qty;
-
-                  return (
-                    <tr key={idx}>
-                      <td className="py-2.5 px-2">
-                        <div className="font-bold text-slate-900">{it.productName || it.product || order.Blank_Item}</div>
-                        <div className="text-[11px] text-slate-500">
-                          اللون: <span className="font-bold text-slate-800">{it.color}</span> | المقاس: <span className="font-bold text-slate-800">{it.size}</span>
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-2 text-center font-extrabold text-sm font-mono">
-                        {qty}
-                      </td>
-                      <td className="py-2.5 px-2 text-left font-bold font-mono">
-                        {unitPr.toLocaleString()} {t.currency}
-                      </td>
-                      <td className="py-2.5 px-2 text-left font-extrabold text-slate-900 font-mono">
-                        {lineTotal.toLocaleString()} {t.currency}
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td className="py-3 px-2">
-                    <div className="font-bold text-slate-900">{order.Blank_Item}</div>
-                    <div className="text-[11px] text-slate-500">
-                      {order.Color ? `${order.Color} - مقاس ${order.Size}` : ''} | {order.Print_Details}
-                    </div>
-                    {order.Design_Ref && (
-                      <div className="text-[10px] text-slate-400">التصميم: {order.Design_Ref}</div>
-                    )}
-                  </td>
-                  <td className="py-3 px-2 text-center font-extrabold text-sm">
-                    {order.Quantity}
-                  </td>
-                  <td className="py-3 px-2 text-left font-bold">
-                    {(total / (order.Quantity || 1)).toLocaleString()} {t.currency}
-                  </td>
-                  <td className="py-3 px-2 text-left font-extrabold text-slate-900">
-                    {total.toLocaleString()} {t.currency}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-right border-collapse min-w-[380px] sm:min-w-0">
+              <thead>
+                <tr className="border-b-2 border-slate-300 text-slate-600 font-bold uppercase">
+                  <th className="py-2 px-2 text-right">المنتج والتفاصيل</th>
+                  <th className="py-2 px-2 text-center">الكمية</th>
+                  <th className="py-2 px-2 text-left">سعر الوحدة (دج)</th>
+                  <th className="py-2 px-2 text-left">المجموع (دج)</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {orderItemsList.length > 0 ? (
+                  orderItemsList.map((it, idx) => {
+                    const qty = parseInt(it.quantity) || 1;
+                    const unitPr = parseFloat(it.unitSellingPrice || (total / (order.Quantity || 1)));
+                    const lineTotal = unitPr * qty;
+
+                    return (
+                      <tr key={idx}>
+                        <td className="py-2.5 px-2">
+                          <div className="font-bold text-slate-900">{it.productName || it.product || order.Blank_Item}</div>
+                          <div className="text-[11px] text-slate-500">
+                            اللون: <span className="font-bold text-slate-800">{it.color}</span> | المقاس: <span className="font-bold text-slate-800">{it.size}</span>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-2 text-center font-extrabold text-sm font-mono">
+                          {qty}
+                        </td>
+                        <td className="py-2.5 px-2 text-left font-bold font-mono">
+                          {unitPr.toLocaleString()} {t.currency}
+                        </td>
+                        <td className="py-2.5 px-2 text-left font-extrabold text-slate-900 font-mono">
+                          {lineTotal.toLocaleString()} {t.currency}
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td className="py-3 px-2">
+                      <div className="font-bold text-slate-900">{order.Blank_Item}</div>
+                      <div className="text-[11px] text-slate-500">
+                        {order.Color ? `${order.Color} - مقاس ${order.Size}` : ''} | {order.Print_Details}
+                      </div>
+                      {order.Design_Ref && (
+                        <div className="text-[10px] text-slate-400">التصميم: {order.Design_Ref}</div>
+                      )}
+                    </td>
+                    <td className="py-3 px-2 text-center font-extrabold text-sm">
+                      {order.Quantity}
+                    </td>
+                    <td className="py-3 px-2 text-left font-bold">
+                      {(total / (order.Quantity || 1)).toLocaleString()} {t.currency}
+                    </td>
+                    <td className="py-3 px-2 text-left font-extrabold text-slate-900">
+                      {total.toLocaleString()} {t.currency}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
           {/* Total & Debt Breakdown */}
           <div className="border-t-2 border-slate-900 pt-3 flex justify-end">

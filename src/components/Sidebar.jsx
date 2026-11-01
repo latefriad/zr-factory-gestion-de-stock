@@ -138,7 +138,7 @@ export function Sidebar({
           flex flex-col justify-between shrink-0 select-none
           transition-all duration-300 ease-[cubic-bezier(0.2,0,0,1)] no-print shadow-2xl md:shadow-none
           ${isOpenMobile ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-          ${isCollapsed ? 'md:w-20' : 'md:w-64 w-72'}
+          ${isCollapsed ? 'md:w-20' : 'md:w-64 w-[280px] max-w-[85vw]'}
         `}
         style={{ direction: lang === 'ar' ? 'rtl' : 'ltr' }}
       >
